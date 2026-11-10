@@ -7,7 +7,14 @@
 
 !/examples/
 /examples/*
-!/examples/ghost-rider-converted-preview.jpg
+!/examples/converted-on-heather.jpg
+!/examples/halftone-closeup-1to1.png
+!/examples/dtf-color-halftone-300dpi-10in.png
+!/examples/underbase-300dpi-10in.png
+
+!/screenshots/
+/screenshots/*
+!/screenshots/halftone-studio.png
 
 !/DTF App/
 /DTF App/*

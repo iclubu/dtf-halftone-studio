@@ -11,11 +11,22 @@
 
 </div>
 
-<p align="center">
-  <img src="examples/ghost-rider-converted-preview.jpg" width="420" alt="Artwork converted for DTF: black knocked out, only color and halftone dots remain">
-  <br>
-  <em>Converted with <code>halftone-studio.html</code>: the black background is knocked out, so only the color and the halftone dots print (shown here on black).</em>
-</p>
+![DTF Halftone Studio — Garment lineup view](screenshots/halftone-studio.png)
+
+## Converted example
+
+The original art had a solid black background. After conversion the black is **knocked out** (it's transparent, so the shirt shows through) and the fades and dark areas are turned into **halftone dots** — only the color and the dots print.
+
+| Converted, shown on a heather-gray shirt | Close-up at 1:1 (300 DPI) |
+| --- | --- |
+| <img src="examples/converted-on-heather.jpg" width="380" alt="Converted art on a gray shirt: black background removed, color and halftone dots remain"> | <img src="examples/halftone-closeup-1to1.png" width="380" alt="Close-up of the halftone dots where the flames fade into the shirt"> |
+
+Print-ready files from this example (10 in wide, 3000 × 4400 px, transparent, tagged 300 DPI + sRGB; "Full design" halftone at 35 LPI, 22.5°):
+
+- [`examples/dtf-color-halftone-300dpi-10in.png`](examples/dtf-color-halftone-300dpi-10in.png) — the color + halftone layer
+- [`examples/underbase-300dpi-10in.png`](examples/underbase-300dpi-10in.png) — the separate white underbase
+
+The source was only 1080 px wide (108 DPI of real detail at 10 in), so this export is an upscale — the app warns about that in red, as the screenshot shows.
 
 ## Two apps
 
