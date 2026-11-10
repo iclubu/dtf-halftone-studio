@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DTF/DTG Prep Studio</title>
+    <script type="module" crossorigin>var te=Object.defineProperty;var re=(n,t,e)=>t in n?te(n,t,{enumerable:!0,configurable:!0,writable:!0,value:e}):n[t]=e;var d=(n,t,e)=>re(n,typeof t!="symbol"?t+"":t,e);(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const i of document.querySelectorAll('link[rel="modulepreload"]'))r(i);new MutationObserver(i=>{for(const o of i)if(o.type==="childList")for(const s of o.addedNodes)s.tagName==="LINK"&&s.rel==="modulepreload"&&r(s)}).observe(document,{childList:!0,subtree:!0});function e(i){const o={};return i.integrity&&(o.integrity=i.integrity),i.referrerPolicy&&(o.referrerPolicy=i.referrerPolicy),i.crossOrigin==="use-credentials"?o.credentials="include":i.crossOrigin==="anonymous"?o.credentials="omit":o.credentials="same-origin",o}function r(i){if(i.ep)return;i.ep=!0;const o=e(i);fetch(i.href,o)}})();const ne=`#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+`,X=`
+uniform float uLevelsBlack;
+uniform float uLevelsWhite;
+uniform float uLevelsMid;
+uniform float uLevelsOutBlack;
+uniform float uLevelsOutWhite;
+vec3 applyLevels(vec3 rgb) {
+  vec3 norm = clamp((rgb - uLevelsBlack) / max(uLevelsWhite - uLevelsBlack, 1e-5), 0.0, 1.0);
+  vec3 g = pow(norm, vec3(1.0 / uLevelsMid));
+  return uLevelsOutBlack + g * (uLevelsOutWhite - uLevelsOutBlack);
+}
+`,ie=`#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2  uResolution;
+uniform float uCellPx;
+uniform float uAngleRad;
+uniform int   uShape;
+uniform bool  uHalftone;
+uniform vec3  uShirtColor;
+uniform float uKnockoutTolerance;
+uniform float uEdgeSoftness;
+uniform float uMicroDot;
+${X}
+out vec4 outColor;
+const float PI = 3.14159265358979;
+
+vec2 rotate(vec2 p, float a) {
+  float c = cos(a), s = sin(a);
+  return vec2(c*p.x - s*p.y, s*p.x + c*p.y);
+}
+float spot_round(vec2 p)   { return 0.5 - 0.5 * cos(PI*p.x) * cos(PI*p.y); }
+float spot_line(vec2 p)    { return 0.5 - 0.5 * cos(PI*p.x); }
+float spot_ellipse(vec2 p) { return 0.5 - 0.5 * cos(PI*p.x) * cos(PI*p.y / 1.5); }
+float spot_diamond(vec2 p) { return clamp(abs(p.x) + abs(p.y), 0.0, 1.0); }
+float spot_square(vec2 p)  { return max(abs(p.x), abs(p.y)); }
+float spotThreshold(vec2 f) {
+  if      (uShape == 0) return spot_round(f);
+  else if (uShape == 1) return spot_ellipse(f);
+  else if (uShape == 2) return spot_diamond(f);
+  else if (uShape == 3) return spot_square(f);
+  else                  return spot_line(f);
+}
+
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec2 uv = vec2(fc.x / uResolution.x, 1.0 - fc.y / uResolution.y);
+  vec4 src = texture(uSrc, uv);
+  vec3 lev = applyLevels(src.rgb);
+
+  // Knockout by distance from the shirt color, then respect the source's own
+  // transparency so removed backgrounds stay removed.
+  float tol = uKnockoutTolerance / 120.0;
+  float ink = clamp(distance(lev, uShirtColor) / max(tol, 0.01), 0.0, 1.0) * src.a;
+
+  float microThreshold = uMicroDot / 10.0 * 0.2;
+  if (ink < microThreshold) ink = 0.0;
+
+  float thr = 0.5; // halftone off: plain threshold
+  if (uHalftone) {
+    vec2 q = rotate(fc, uAngleRad) / uCellPx;
+    thr = spotThreshold(fract(q) * 2.0 - 1.0);
+  }
+
+  float soft = uEdgeSoftness / 60.0;
+  float a = soft > 0.0 ? smoothstep(thr - soft, thr + soft, ink) : step(thr, ink);
+  outColor = vec4(a, 0.0, 0.0, 1.0);
+}
+`,oe=`#version 300 es
+precision highp float;
+uniform sampler2D uIn;
+uniform int  uRadius;
+uniform bool uDilate;
+out vec4 outColor;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 size = textureSize(uIn, 0);
+  float r2 = (float(uRadius) + 0.5) * (float(uRadius) + 0.5);
+  float m = uDilate ? 0.0 : 1.0;
+  for (int dy = -uRadius; dy <= uRadius; dy++) {
+    for (int dx = -uRadius; dx <= uRadius; dx++) {
+      if (float(dx*dx + dy*dy) > r2) continue;
+      ivec2 q = p + ivec2(dx, dy);
+      bool inside = q.x >= 0 && q.y >= 0 && q.x < size.x && q.y < size.y;
+      float v = inside ? texelFetch(uIn, q, 0).r : 0.0;
+      m = uDilate ? max(m, v) : min(m, v);
+    }
+  }
+  outColor = vec4(m, 0.0, 0.0, 1.0);
+}
+`,ae=`#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform sampler2D uInk;
+uniform sampler2D uWhite;
+uniform vec2  uResolution;
+uniform int   uViewMode;
+uniform vec3  uShirtColor;
+${X}
+out vec4 outColor;
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  ivec2 p = ivec2(fc);
+  vec2 uv = vec2(fc.x / uResolution.x, 1.0 - fc.y / uResolution.y);
+  vec3 lev = applyLevels(texture(uSrc, uv).rgb);
+  float a = texelFetch(uInk, p, 0).r;
+  if (uViewMode == 2) {
+    outColor = vec4(1.0, 1.0, 1.0, texelFetch(uWhite, p, 0).r); // underbase
+  } else if (uViewMode == 1) {
+    outColor = vec4(lev, a);                                    // separation (export)
+  } else {
+    outColor = vec4(mix(uShirtColor, lev, a), 1.0);             // preview on the shirt
+  }
+}
+`,z=16;class se{constructor(t){d(this,"gl");d(this,"vao");d(this,"inkProg");d(this,"morphProg");d(this,"finalProg");d(this,"u");d(this,"src",null);d(this,"targets",[]);d(this,"w",0);d(this,"h",0);d(this,"maxSize");const e=t.getContext("webgl2",{premultipliedAlpha:!1,preserveDrawingBuffer:!0,antialias:!1});if(!e)throw new Error("WebGL2 not available");this.gl=e;const r=e.getParameter(e.MAX_VIEWPORT_DIMS);this.maxSize=Math.min(e.getParameter(e.MAX_TEXTURE_SIZE),r[0],r[1]),this.inkProg=this.link(ie),this.morphProg=this.link(oe),this.finalProg=this.link(ae);const i=["uLevelsBlack","uLevelsWhite","uLevelsMid","uLevelsOutBlack","uLevelsOutWhite"];this.u={ink:this.locate(this.inkProg,["uSrc","uResolution","uCellPx","uAngleRad","uShape","uHalftone","uShirtColor","uKnockoutTolerance","uEdgeSoftness","uMicroDot",...i]),morph:this.locate(this.morphProg,["uIn","uRadius","uDilate"]),final:this.locate(this.finalProg,["uSrc","uInk","uWhite","uResolution","uViewMode","uShirtColor",...i])};const o=e.createVertexArray();e.bindVertexArray(o),e.bindBuffer(e.ARRAY_BUFFER,e.createBuffer()),e.bufferData(e.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,-1,1,1,-1,1]),e.STATIC_DRAW),e.enableVertexAttribArray(0),e.vertexAttribPointer(0,2,e.FLOAT,!1,0,0),this.vao=o,e.disable(e.BLEND)}get width(){return this.w}get height(){return this.h}link(t){const e=this.gl,r=e.createProgram();if(e.attachShader(r,this.compile(e.VERTEX_SHADER,ne)),e.attachShader(r,this.compile(e.FRAGMENT_SHADER,t)),e.bindAttribLocation(r,0,"aPos"),e.linkProgram(r),!e.getProgramParameter(r,e.LINK_STATUS))throw new Error("Link failed: "+e.getProgramInfoLog(r));return r}compile(t,e){const r=this.gl.createShader(t);if(this.gl.shaderSource(r,e),this.gl.compileShader(r),!this.gl.getShaderParameter(r,this.gl.COMPILE_STATUS))throw new Error("Compile failed: "+this.gl.getShaderInfoLog(r));return r}locate(t,e){const r={};for(const i of e)r[i]=this.gl.getUniformLocation(t,i);return r}setImage(t){const e=this.gl;let r=t;if(Math.max(t.width,t.height)>this.maxSize){const o=this.maxSize/Math.max(t.width,t.height),s=document.createElement("canvas");s.width=Math.max(1,Math.floor(t.width*o)),s.height=Math.max(1,Math.floor(t.height*o));const l=s.getContext("2d");l.imageSmoothingQuality="high",l.drawImage(t,0,0,s.width,s.height),r=s}this.src&&e.deleteTexture(this.src);const i=e.createTexture();e.bindTexture(e.TEXTURE_2D,i),e.pixelStorei(e.UNPACK_PREMULTIPLY_ALPHA_WEBGL,!1),e.pixelStorei(e.UNPACK_FLIP_Y_WEBGL,!1),e.texImage2D(e.TEXTURE_2D,0,e.RGBA,e.RGBA,e.UNSIGNED_BYTE,r),e.generateMipmap(e.TEXTURE_2D),e.texParameteri(e.TEXTURE_2D,e.TEXTURE_MIN_FILTER,e.LINEAR_MIPMAP_LINEAR),e.texParameteri(e.TEXTURE_2D,e.TEXTURE_MAG_FILTER,e.LINEAR),e.texParameteri(e.TEXTURE_2D,e.TEXTURE_WRAP_S,e.CLAMP_TO_EDGE),e.texParameteri(e.TEXTURE_2D,e.TEXTURE_WRAP_T,e.CLAMP_TO_EDGE),this.src=i}setOutputSize(t,e){if(t=Math.max(1,Math.min(this.maxSize,Math.round(t))),e=Math.max(1,Math.min(this.maxSize,Math.round(e))),t===this.w&&e===this.h&&this.targets.length)return;const r=this.gl;for(const o of this.targets)r.deleteTexture(o.tex),r.deleteFramebuffer(o.fbo);this.targets=[];for(let o=0;o<3;o++){const s=r.createTexture();r.bindTexture(r.TEXTURE_2D,s),r.texStorage2D(r.TEXTURE_2D,1,r.R8,t,e),r.texParameteri(r.TEXTURE_2D,r.TEXTURE_MIN_FILTER,r.NEAREST),r.texParameteri(r.TEXTURE_2D,r.TEXTURE_MAG_FILTER,r.NEAREST);const l=r.createFramebuffer();if(r.bindFramebuffer(r.FRAMEBUFFER,l),r.framebufferTexture2D(r.FRAMEBUFFER,r.COLOR_ATTACHMENT0,r.TEXTURE_2D,s,0),r.checkFramebufferStatus(r.FRAMEBUFFER)!==r.FRAMEBUFFER_COMPLETE)throw new Error("Framebuffer incomplete");this.targets.push({tex:s,fbo:l})}r.bindFramebuffer(r.FRAMEBUFFER,null);const i=r.canvas;i.width=t,i.height=e,this.w=t,this.h=e}setLevels(t,e){const r=this.gl;r.uniform1f(t.uLevelsBlack,e.levelsBlack),r.uniform1f(t.uLevelsWhite,e.levelsWhite),r.uniform1f(t.uLevelsMid,e.levelsMid),r.uniform1f(t.uLevelsOutBlack,e.levelsOutBlack),r.uniform1f(t.uLevelsOutWhite,e.levelsOutWhite)}bindTex(t,e){this.gl.activeTexture(this.gl.TEXTURE0+t),this.gl.bindTexture(this.gl.TEXTURE_2D,e)}morph(t,e,r,i){const o=this.gl;o.bindFramebuffer(o.FRAMEBUFFER,this.targets[e].fbo),o.useProgram(this.morphProg),this.bindTex(0,this.targets[t].tex),o.uniform1i(this.u.morph.uIn,0),o.uniform1i(this.u.morph.uRadius,Math.min(z,Math.max(0,Math.round(r)))),o.uniform1i(this.u.morph.uDilate,i?1:0),o.drawArrays(o.TRIANGLES,0,6)}render(t){if(!this.src||!this.targets.length)return;const e=this.gl;e.viewport(0,0,this.w,this.h),e.bindVertexArray(this.vao),e.bindFramebuffer(e.FRAMEBUFFER,this.targets[0].fbo),e.useProgram(this.inkProg);const r=this.u.ink;this.bindTex(0,this.src),e.uniform1i(r.uSrc,0),e.uniform2f(r.uResolution,this.w,this.h),e.uniform1f(r.uCellPx,Math.max(1,t.cellPx)),e.uniform1f(r.uAngleRad,t.angleRad),e.uniform1i(r.uShape,t.shape),e.uniform1i(r.uHalftone,t.halftone?1:0),e.uniform3f(r.uShirtColor,t.shirtColor[0],t.shirtColor[1],t.shirtColor[2]),e.uniform1f(r.uKnockoutTolerance,t.knockoutTolerance),e.uniform1f(r.uEdgeSoftness,t.edgeSoftness),e.uniform1f(r.uMicroDot,t.microDot),this.setLevels(r,t),e.drawArrays(e.TRIANGLES,0,6),t.cleanupRadius>0&&(this.morph(0,1,t.cleanupRadius,!1),this.morph(1,0,t.cleanupRadius,!0),this.morph(0,1,t.cleanupRadius,!0),this.morph(1,0,t.cleanupRadius,!1)),this.morph(0,2,t.chokeRadius,!1),e.bindFramebuffer(e.FRAMEBUFFER,null),e.useProgram(this.finalProg);const i=this.u.final;this.bindTex(0,this.src),this.bindTex(1,this.targets[0].tex),this.bindTex(2,this.targets[2].tex),e.uniform1i(i.uSrc,0),e.uniform1i(i.uInk,1),e.uniform1i(i.uWhite,2),e.uniform2f(i.uResolution,this.w,this.h),e.uniform1i(i.uViewMode,t.viewMode),e.uniform3f(i.uShirtColor,t.shirtColor[0],t.shirtColor[1],t.shirtColor[2]),this.setLevels(i,t),e.drawArrays(e.TRIANGLES,0,6)}readInkAlpha(){const t=this.gl,e=new Uint8Array(this.w*this.h*4);t.bindFramebuffer(t.FRAMEBUFFER,this.targets[0].fbo),t.readPixels(0,0,this.w,this.h,t.RGBA,t.UNSIGNED_BYTE,e),t.bindFramebuffer(t.FRAMEBUFFER,null);const r=new Uint8Array(this.w*this.h);for(let i=0;i<r.length;i++)r[i]=e[i*4];return r}toBlob(){return new Promise((t,e)=>{this.gl.canvas.toBlob(r=>r?t(r):e(new Error("The browser could not encode an image this large")),"image/png")})}}function q(n,t){return t==="in"?n:t==="mm"?n/25.4:n/2.54}function B(n,t){return t==="in"?n:t==="mm"?n*25.4:n*2.54}function le(n){const t=[],{srcWidth:e,srcHeight:r,printWidthIn:i,printHeightIn:o,targetDPI:s}=n,l=i,u=o,x=e/l,h=r/u,c=Math.min(x,h);if(!isFinite(c)||c<=0)return t.push({level:"red",message:"Invalid print dimensions."}),{findings:t,effectiveDPI:0,printIn:{w:l,h:u}};c>=300?t.push({level:"green",message:`Ready for print — ${c.toFixed(0)} DPI.`}):c>=150?t.push({level:"amber",message:`Below 300 DPI (${c.toFixed(0)}). Fine for photos, soft for line art.`}):c>=72?t.push({level:"amber",message:`Too low for DTF (${c.toFixed(0)} DPI). Increase resolution or reduce print size.`}):t.push({level:"red",message:`Below minimum (${c.toFixed(0)} DPI). Cannot export.`});const D=Math.max(l*s/e,u*s/r);return D>2&&t.push({level:"amber",message:`Upscaling ×${D.toFixed(1)} — detail will be lost.`}),l>n.maxFilmWidthIn&&t.push({level:"red",message:`Print width ${l.toFixed(2)}″ exceeds film width ${n.maxFilmWidthIn}″.`}),n.hasAlpha||t.push({level:"amber",message:"No transparency detected — DTF/DTG needs a transparent background."}),t.push({level:"green",message:`${e}×${r} px → ${l.toFixed(2)}″ × ${u.toFixed(2)}″ at ${s} DPI`}),{findings:t,effectiveDPI:c,printIn:{w:l,h:u}}}const a=n=>document.getElementById(n),U="https://www.remove.bg/upload",S=300,ue=4e7,V=a("canvas"),ce=a("empty-state"),W=a("fileInput"),g=a("btnExport"),b=a("dropZone"),he=a("btnBgRemover"),O=a("btnInitialApply"),K=a("btnApply"),fe=a("advancedSettings"),de=a("preflightBox"),k=a("btnAutoTone"),M=a("printWidth"),I=a("printHeight"),pe=a("filmWidth"),me=a("sizeFindings"),f={shirtColor:a("shirtColor"),shirtHex:a("shirtHex"),knockoutTolerance:a("knockoutTolerance"),edgeSoftness:a("edgeSoftness"),patternScaleSelect:a("patternScaleSelect"),patternAngleInput:a("patternAngleInput"),halftoneShape:a("halftoneShape"),enableHalftone:a("enableHalftone"),cleanupIntensity:a("cleanupIntensity"),microDot:a("microDot"),enableUnderbase:a("enableUnderbase"),chokePx:a("chokePx")};let v;try{v=new se(V)}catch(n){throw alert("WebGL2 not available"),n}let E=null,y=null,w=0,T=0,Y=0,A="in",p=0,R=!1;const F=n=>(Math.round(n*100)/100).toString();function ge(n){const t=parseInt(n.replace("#",""),16);return[(t>>16&255)/255,(t>>8&255)/255,(t&255)/255]}function Z(n,t=1024){const e=Math.min(1,t/Math.max(n.width,n.height)),r=document.createElement("canvas");r.width=Math.max(1,Math.round(n.width*e)),r.height=Math.max(1,Math.round(n.height*e));const i=r.getContext("2d",{willReadFrequently:!0});return i.drawImage(n,0,0,r.width,r.height),i.getImageData(0,0,r.width,r.height).data}function j(n){const t=new Array(256).fill(0);let e=0;for(let r=0;r<n.length;r+=4)n[r+3]<128||(t[Math.round(.299*n[r]+.587*n[r+1]+.114*n[r+2])]++,e++);return{hist:t,total:e}}const P=()=>w?p*T/w:0;function Q(){let n=p*S,t=P()*S;const e=Math.min(1,v.maxSize/Math.max(n,t),Math.sqrt(ue/Math.max(1,n*t)));return n=Math.max(1,Math.floor(n*e)),t=Math.max(1,Math.floor(t*e)),{w:n,h:t,dpi:n/p,capped:e<1}}function L(){document.activeElement!==M&&(M.value=F(B(p,A))),document.activeElement!==I&&(I.value=F(B(P(),A)))}M.addEventListener("input",()=>{const n=parseFloat(M.value);n>0&&(p=q(n,A),L(),m())});I.addEventListener("input",()=>{const n=parseFloat(I.value);n>0&&T&&(p=q(n,A)*w/T,L(),m())});document.querySelectorAll("[data-unit]").forEach(n=>{n.addEventListener("click",()=>{A=n.dataset.unit,document.querySelectorAll("[data-unit]").forEach(t=>t.classList.toggle("active",t===n)),M.blur(),I.blur(),L()})});function ve(n){me.replaceChildren(...n.map(t=>{const e=document.createElement("div");return e.className=`finding ${t.level}`,e.textContent=t.message,e}))}function xe(){if(!E)return;const{hist:n,total:t}=j(Z(E));if(!t)return;let e=0,r=0,i=255;for(let o=0;o<256;o++)if(e+=n[o],e>t*.05){r=o;break}e=0;for(let o=255;o>=0;o--)if(e+=n[o],e>t*.05){i=o;break}i<=r&&(i=Math.min(255,r+1)),a("levelsBlack").value=r.toString(),a("levelsBlackSlider").value=r.toString(),a("levelsWhite").value=i.toString(),a("levelsWhiteSlider").value=i.toString(),a("levelsMid").value="1.00",a("levelsMidSlider").value="1.00",m()}k==null||k.addEventListener("click",n=>{n.stopPropagation(),xe()});he.addEventListener("click",()=>{const n=Math.min(1200,screen.availWidth-80),t=Math.min(900,screen.availHeight-80),e=Math.round((screen.availWidth-n)/2),r=Math.round((screen.availHeight-t)/2),i=window.open(U,"bgRemover",`popup,width=${n},height=${t},left=${e},top=${r}`);if(i){i.opener=null,i.focus();return}alert(`Your browser blocked the pop-up. Allow pop-ups for this page, or open ${U} yourself.`)});O.addEventListener("click",()=>{O.style.display="none",fe.style.display="block",de.style.display="flex",K.style.display="flex",m()});f.shirtColor.addEventListener("input",n=>{f.shirtHex.value=n.target.value.toUpperCase(),m()});f.shirtHex.addEventListener("input",()=>{const n=/^#?([0-9a-f]{6})$/i.exec(f.shirtHex.value.trim());n&&(f.shirtColor.value="#"+n[1].toLowerCase(),m())});document.querySelectorAll('input[name="view"]').forEach(n=>{n.addEventListener("change",t=>{const e=t.target.value;Y=e==="composite"?0:e==="color"?1:2,m()})});window.setZoom=n=>{V.style.setProperty("--zoom",(n/100).toString())};function J(n,t){const e=document.getElementById(n),r=document.getElementById(t);if(!e||!r)return;const i=o=>{e.value=o,r.value=o,m()};e.addEventListener("input",()=>i(e.value)),r.addEventListener("input",()=>i(r.value))}["knockoutTolerance","edgeSoftness","cleanupIntensity","microDot","chokePx"].forEach(n=>J(n,n+"Num"));["levelsBlack","levelsMid","levelsWhite","levelsOutBlack","levelsOutWhite"].forEach(n=>J(n+"Slider",n));document.querySelectorAll("input[type=range], input[type=number]").forEach(n=>{const t=n;t.addEventListener("wheel",e=>{e.preventDefault();const r=parseFloat(t.step)||1,i=e.deltaY<0?1:-1;let o=parseFloat(t.value)+r*i;isNaN(parseFloat(t.min))||(o=Math.max(parseFloat(t.min),o)),isNaN(parseFloat(t.max))||(o=Math.min(parseFloat(t.max),o)),t.value=o.toFixed(r<1?2:0),t.dispatchEvent(new Event("input",{bubbles:!0}))},{passive:!1})});function Ee(n){const t=document.getElementById("histogramCanvas");if(!t)return;const e=t.getBoundingClientRect();e.width&&(t.width=e.width,t.height=e.height);const r=t.getContext("2d"),{hist:i}=j(Z(n)),o=Math.max(1,...i);r.clearRect(0,0,t.width,t.height),r.fillStyle="#888";const s=t.width/256;for(let l=0;l<256;l++){const u=i[l]/o*t.height;r.fillRect(l*s,t.height-u,s,u)}}function Re(n){E=n,w=n.width,T=n.height,v.setImage(n),ce.classList.add("hidden"),g.disabled=!1,a("pixelDimensions").textContent=`${w} × ${T} px`,L(),Ee(n),m()}async function ee(n){const t=n!==y;y=n;const e=await createImageBitmap(n,{premultiplyAlpha:"none"});(t||!p)&&(p=e.width/S),Re(e)}W.addEventListener("change",async()=>{var t;const n=(t=W.files)==null?void 0:t[0];n&&await ee(n)});b.addEventListener("dragover",n=>{n.preventDefault(),b.style.background="rgba(6, 182, 212, 0.05)"});b.addEventListener("dragleave",()=>{b.style.background=""});b.addEventListener("drop",async n=>{var e;n.preventDefault(),b.style.background="";const t=(e=n.dataTransfer)==null?void 0:e.files[0];t&&t.type.startsWith("image/")&&await ee(t)});function be(n,t){const e=parseFloat(f.patternScaleSelect.value),r=parseFloat(f.patternAngleInput.value)||0,i=t/S,o=parseFloat(f.cleanupIntensity.value),s=o>66?2:o>0?1:0,l=parseFloat(f.chokePx.value)||0,u=(x,h)=>{const c=parseFloat(a(x).value);return isNaN(c)?h:c};return{shape:parseInt(f.halftoneShape.value),cellPx:t/e,angleRad:r*Math.PI/180,halftone:f.enableHalftone.checked,shirtColor:ge(f.shirtColor.value),knockoutTolerance:parseFloat(f.knockoutTolerance.value),edgeSoftness:parseFloat(f.edgeSoftness.value),microDot:parseFloat(f.microDot.value),cleanupRadius:s?Math.max(1,Math.round(s*i)):0,chokeRadius:Math.min(z,Math.round(l*i)),viewMode:n,levelsBlack:u("levelsBlack",0)/255,levelsWhite:u("levelsWhite",255)/255,levelsMid:u("levelsMid",1)||1,levelsOutBlack:u("levelsOutBlack",0)/255,levelsOutWhite:u("levelsOutWhite",255)/255}}function C(n){const t=Q();return v.setOutputSize(t.w,t.h),v.render(be(n,t.dpi)),t}function we(){!E||!(p>0)||(C(Y),Te())}let _=!1;function m(){_||(_=!0,requestAnimationFrame(()=>{_=!1,we()}))}let N=0;function Te(){clearTimeout(N),N=window.setTimeout(ye,250)}function ye(){if(!E)return;const n=Q(),t=v.readInkAlpha();let e=0,r=0;for(let h=0;h<t.length;h++){const c=t[h];c>5&&(e++,c<250&&r++)}const o=[...le({srcWidth:w,srcHeight:T,printWidthIn:p,printHeightIn:P(),targetDPI:S,hasAlpha:e<t.length,maxFilmWidthIn:parseFloat(pe.value)||22}).findings];n.capped&&o.push({level:"amber",message:`This size exceeds the GPU/memory limit — exporting at ${Math.round(n.dpi)} DPI (${n.w}×${n.h} px).`}),ve(o),R=o.some(h=>h.level==="red"),g.disabled=R,g.title=R?o.filter(h=>h.level==="red").map(h=>h.message).join(" "):"";const s=a("preflightVerdict"),l=a("preflightDetail");if(e===0){a("preflightScore").textContent="—",s.textContent="Nothing to print",l.textContent="Every pixel is knocked out. Lower the knockout tolerance or check the shirt color.";return}const u=r/e*100,x=Math.max(0,Math.round(100-10*u));a("preflightScore").textContent=x.toString(),s.textContent=r===0?"Clean edges, no haze":"Semi-transparent ink found",l.textContent=r===0?"Every inked pixel is fully solid.":`${u.toFixed(1)}% of ink is semi-transparent (${r} px). Lower Edge softness for hard DTF edges.`}document.querySelectorAll("input, select").forEach(n=>n.addEventListener("input",m));const Se=(()=>{const n=new Uint32Array(256);for(let t=0;t<256;t++){let e=t;for(let r=0;r<8;r++)e=e&1?3988292384^e>>>1:e>>>1;n[t]=e>>>0}return n})();function Me(n){let t=4294967295;for(let e=0;e<n.length;e++)t=Se[(t^n[e])&255]^t>>>8;return(t^4294967295)>>>0}function $(n,t){const e=new Uint8Array(12+t.length),r=new DataView(e.buffer);r.setUint32(0,t.length);for(let i=0;i<4;i++)e[4+i]=n.charCodeAt(i);return e.set(t,8),r.setUint32(8+t.length,Me(e.subarray(4,8+t.length))),e}async function H(n,t){const e=new Uint8Array(await n.arrayBuffer()),r=new DataView(e.buffer),i=Math.round(t/.0254),o=new Uint8Array(9),s=new DataView(o.buffer);s.setUint32(0,i),s.setUint32(4,i),o[8]=1;const l=[e.subarray(0,8)];let u=8;for(;u+8<=e.length;){const x=r.getUint32(u),h=u+12+x,c=String.fromCharCode(e[u+4],e[u+5],e[u+6],e[u+7]);["pHYs","sRGB","iCCP","gAMA","cHRM"].includes(c)||l.push(e.subarray(u,h)),c==="IHDR"&&l.push($("sRGB",new Uint8Array([0])),$("pHYs",o)),u=h}return new Blob(l,{type:"image/png"})}function G(n,t){const e=URL.createObjectURL(n),r=document.createElement("a");r.href=e,r.download=t,r.click(),setTimeout(()=>URL.revokeObjectURL(e),4e3)}K.addEventListener("click",()=>{if(!E){alert("Please load an image first.");return}if(R){alert(g.title||"Fix the red Image Size warnings before exporting.");return}g.click()});g.addEventListener("click",async()=>{if(!(!E||R)){g.disabled=!0;try{const n=((y==null?void 0:y.name)??"design").replace(/\.[^.]+$/,""),t=C(1),e=Math.round(t.dpi),r=`${e}dpi-${F(p)}x${F(P())}in`;G(await H(await v.toBlob(),e),`${n}-dtf-color-${r}.png`),f.enableUnderbase.checked&&(C(2),G(await H(await v.toBlob(),e),`${n}-underbase-${r}.png`))}catch(n){console.error(n),alert("Export failed: "+n.message)}finally{g.disabled=R,m()}}});</script>
+    <style rel="stylesheet" crossorigin>:root{color-scheme:dark;--bg: #0c0c0c;--sidebar-bg: #121212;--panel-bg: #1c1c1c;--border: #2a2a2a;--fg: #e5e5e5;--muted: #888;--accent: #06b6d4;--accent-hover: #0891b2}*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Inter,sans-serif;background:var(--bg);color:var(--fg);height:100vh;display:flex;flex-direction:column;overflow:hidden}.app-header{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 1rem;border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0}.logo{font-weight:800;font-size:1.1rem;letter-spacing:-.02em}.logo-mark{color:var(--accent)}.logo-sub{font-weight:400;font-size:.8rem;color:var(--muted)}#btnExport{background:var(--accent);border:0;color:#000;font:inherit;font-size:.8rem;font-weight:700;padding:.4rem 1rem;border-radius:4px;cursor:pointer}#btnExport:disabled{opacity:.3;cursor:not-allowed}.studio-layout{display:flex;flex:1;min-height:0;overflow:hidden}.sidebar{width:340px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}.controls-scroll{flex:1;overflow-y:auto;padding:.5rem}.preflight-box{background:var(--panel-bg);border-bottom:1px solid var(--border);padding:1rem;display:flex;align-items:center;gap:1rem}.preflight-score{font-size:2rem;font-weight:800;color:#10b981;line-height:1}.preflight-score.warning{color:#f59e0b}.preflight-score.danger{color:#ef4444}.preflight-text{display:flex;flex-direction:column}.preflight-verdict{font-size:.85rem;font-weight:600}.preflight-detail{font-size:.7rem;color:var(--muted);margin-top:2px}details{border-bottom:1px solid var(--border)}summary{padding:1rem .5rem;font-size:.8rem;font-weight:600;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between}summary:hover{background:#ffffff08}summary:after{content:"+";color:var(--muted);font-size:1.2rem}details[open] summary:after{content:"−"}.panel-content{padding:0 .5rem 1rem}.control-row{margin-bottom:1rem}.control-row label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:.3rem}.split-row{display:flex;gap:1rem}.split-row>div{flex:1}.input-group{display:flex;align-items:center;gap:.5rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.2rem .5rem}.input-group.split{justify-content:space-between}input[type=range]{-webkit-appearance:none;flex:1;height:4px;background:var(--border);border-radius:2px;cursor:ew-resize}input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:ew-resize}input[type=number],input[type=text]{background:transparent;border:0;color:var(--fg);font:inherit;font-family:ui-monospace,monospace;font-size:.75rem;width:50px;text-align:right;outline:none}input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}input[type=color]{border:0;padding:0;width:24px;height:24px;border-radius:4px;cursor:pointer}select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--fg);padding:.4rem;border-radius:4px;font:inherit;font-size:.8rem}.help-text{font-size:.65rem;color:#666;line-height:1.3;margin-top:.3rem}.checkbox-row{display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;font-size:.8rem}.toggle-switch{position:relative;width:32px;height:18px;flex-shrink:0}.toggle-switch input{opacity:0;width:0;height:0}.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:var(--border);transition:.2s;border-radius:18px}.slider:before{position:absolute;content:"";height:12px;width:12px;left:3px;bottom:3px;background-color:var(--fg);transition:.2s;border-radius:50%}input:checked+.slider{background-color:var(--accent)}input:checked+.slider:before{transform:translate(14px)}.btn-primary{width:100%;background:var(--accent);color:#000;border:0;padding:.75rem;font-size:.9rem;font-weight:700;border-radius:4px;cursor:pointer;margin:1rem 0;display:flex;align-items:center;justify-content:center}.btn-secondary{background:transparent;border:1px solid var(--border);color:var(--fg);padding:.4rem;border-radius:4px;cursor:pointer;font-size:.8rem;transition:background .2s}.btn-secondary:hover{background:#ffffff0d}.button-row{display:flex;gap:4px;margin-top:.5rem}.btn-small{background:var(--bg);border:1px solid var(--border);color:var(--muted);padding:.2rem .5rem;border-radius:4px;cursor:pointer;font-size:.7rem}.btn-small.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}.levels-section{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem}.levels-label{font-size:.8rem;font-weight:600;margin-bottom:.5rem;color:var(--fg)}.histogram-box{background:#000;border:1px solid var(--border);border-radius:4px;margin-bottom:1.5rem;position:relative}#histogramCanvas{display:block;width:100%;height:60px;opacity:.8;border-radius:4px 4px 0 0}.slider-track{position:relative;height:0;z-index:10}.slider-gradient{position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(to right,#000,#fff);transform:translateY(-50%);border-radius:3px;pointer-events:none}.level-slider{position:absolute;top:0;left:0;right:0;width:100%;height:20px;-webkit-appearance:none;background:transparent;transform:translateY(-50%);margin:0;opacity:0;cursor:ew-resize;pointer-events:auto}.level-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:18px;border-radius:2px;background:#fff;border:1px solid #000;cursor:ew-resize;box-shadow:0 0 2px #00000080;opacity:1;margin-top:0}.level-slider.mid::-webkit-slider-thumb{background:#888}.level-slider.white{z-index:1}.level-slider.mid{z-index:2}.level-slider.black{z-index:3}.levels-inputs-row{display:flex;justify-content:space-between;gap:.5rem;margin-top:.25rem}.levels-inputs-row input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.3rem;text-align:center;color:var(--fg);font-family:ui-monospace,monospace;font-size:.75rem}.status-banner{display:flex;align-items:center;gap:.5rem;background:#10b9811a;border:1px solid rgba(16,185,129,.2);color:#10b981;padding:.5rem 1rem;border-radius:4px;font-size:.8rem;margin-top:1rem}.status-banner .dot{width:6px;height:6px;border-radius:50%;background:#10b981}.warning-banner{background:#ec48991a;border:1px solid rgba(236,72,153,.3);padding:.75rem;border-radius:4px;margin-top:.5rem}.warning-text{color:#f8fafc;font-size:.75rem;line-height:1.4;margin-bottom:.5rem}.warning-actions{display:flex;justify-content:flex-end;gap:1rem}.btn-text{background:transparent;border:0;color:#888;font-size:.75rem;cursor:pointer}.btn-text.highlight{color:#ec4899}.btn-text:hover{text-decoration:underline}.workspace{flex:1;display:flex;flex-direction:column;background:#050505;overflow:hidden;min-width:0}.canvas-toolbar{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 1rem;border-bottom:1px solid var(--border);background:var(--bg)}.view-modes{display:flex;gap:1rem;font-size:.8rem}.view-modes label{display:flex;align-items:center;gap:.3rem;cursor:pointer}.zoom-controls{display:flex;gap:4px}.btn-icon{background:transparent;border:1px solid var(--border);color:var(--muted);padding:.2rem .5rem;border-radius:4px;cursor:pointer;font-size:.7rem}.canvas-area{flex:1;position:relative;overflow:auto;display:flex;align-items:center;justify-content:center;padding:2rem;background:repeating-conic-gradient(#e5e5e5,#e5e5e5 25%,#fff 0%,#fff 50%) 50% / 20px 20px}.canvas-container{display:flex;align-items:center;justify-content:center}canvas{display:block;max-width:100%;max-height:calc(100vh - 140px);box-shadow:0 10px 30px #0000004d;transform:scale(var(--zoom));transform-origin:center;transition:transform .1s}.finding{margin-top:.25rem}.finding.green{color:#10b981}.finding.amber{color:#f59e0b}.finding.red{color:#ef4444;font-weight:700}#empty-state{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;color:var(--muted);background:#141414e6;padding:4rem;border-radius:12px;border:2px dashed var(--border);pointer-events:none}#empty-state>*{pointer-events:auto}#empty-state.hidden{display:none}.file-input-btn{background:var(--accent);color:#000;padding:.5rem 1rem;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:700}.file-input-btn input{display:none}</style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="logo">
+        <span class="logo-mark">DTF</span> TONES <span class="logo-sub">Studio</span>
+      </div>
+      <div class="header-actions">
+        <button id="btnExport" disabled>Export 300 DPI PNG</button>
+      </div>
+    </header>
+
+    <main class="studio-layout">
+      <aside class="sidebar">
+        
+        <!-- PREFLIGHT (Hidden until apply) -->
+        <div class="preflight-box" id="preflightBox" style="display: none;">
+          <div class="preflight-score" id="preflightScore">100</div>
+          <div class="preflight-text">
+            <div class="preflight-verdict" id="preflightVerdict">Clean edges, no haze</div>
+            <div class="preflight-detail" id="preflightDetail">Every inked pixel is fully solid.</div>
+          </div>
+        </div>
+
+        <form id="controls" class="controls-scroll" autocomplete="off">
+          
+          <!-- 1. BACKGROUND REMOVAL -->
+          <details open>
+            <summary>Background Removal</summary>
+            <div class="panel-content">
+              <div class="help-text" style="margin-bottom: 1rem;">
+                For solid black or white backgrounds, use the Knockout controls below — they're more precise.
+                For complex photo backgrounds, use an online background remover, download the transparent PNG, and drop it here.
+              </div>
+              <button type="button" id="btnBgRemover" class="btn-secondary" style="width: 100%; margin-top: 0.5rem;">
+                Open background remover ↗
+              </button>
+              <div class="help-text" style="margin-top: 0.5rem;">
+                Opens in a separate window. Note: the website uploads your image to its own servers.
+              </div>
+            </div>
+          </details>
+
+          <!-- 2. IMAGE SIZE -->
+          <details>
+            <summary>Image Size</summary>
+            <div class="panel-content">
+              <div class="control-row">
+                <label>Pixel Dimensions</label>
+                <div class="help-text" id="pixelDimensions">4000 × 5000 px</div>
+              </div>
+              <div class="control-row split-row">
+                <div>
+                  <label>Width</label>
+                  <input type="number" id="printWidth" min="0.1" step="0.01" />
+                </div>
+                <div>
+                  <label>Height</label>
+                  <input type="number" id="printHeight" min="0.1" step="0.01" />
+                </div>
+              </div>
+              <div class="button-row">
+                <button type="button" class="btn-small active" data-unit="in">Inches</button>
+                <button type="button" class="btn-small" data-unit="cm">cm</button>
+                <button type="button" class="btn-small" data-unit="mm">mm</button>
+              </div>
+              <div class="control-row" style="margin-top: 1rem;">
+                <label>Film width (in)</label>
+                <input type="number" id="filmWidth" value="22" min="1" step="0.5" />
+              </div>
+              <div class="control-row">
+                <label>Print resolution</label>
+                <div class="help-text" id="sizeFindings">Load an image to check its resolution at this size.</div>
+              </div>
+            </div>
+          </details>
+
+          <!-- 3. SHIRT COLOR & KNOCKOUT -->
+          <details open>
+            <summary>Shirt Color</summary>
+            <div class="panel-content">
+              <div class="control-row">
+                <label>Knockout Color</label>
+                <div class="input-group split">
+                  <input type="color" id="shirtColor" value="#000000" />
+                  <input type="text" id="shirtHex" value="#000000" class="hex-input" />
+                </div>
+              </div>
+              <div class="control-row">
+                <label>Knockout tolerance</label>
+                <div class="input-group">
+                  <input type="range" id="knockoutTolerance" min="0" max="120" step="1" value="30" />
+                  <input type="number" id="knockoutToleranceNum" min="0" max="120" step="1" value="30" />
+                </div>
+                <div class="help-text">How close a colour has to be to the knockout colour to be removed</div>
+              </div>
+              <div class="control-row">
+                <label>Edge softness</label>
+                <div class="input-group">
+                  <input type="range" id="edgeSoftness" min="0" max="60" step="1" value="10" />
+                  <input type="number" id="edgeSoftnessNum" min="0" max="60" step="1" value="10" />
+                </div>
+                <div class="help-text">0 = hard cut. Higher fades the edge, which can print as a faint halo on DTF</div>
+              </div>
+            </div>
+          </details>
+
+          <!-- HIDDEN ADVANCED SETTINGS -->
+          <div id="advancedSettings" style="display: none;">
+            
+            <!-- 4. HALFTONE SCREEN -->
+            <details open>
+              <summary>
+                Halftone Screen
+                <button type="button" id="btnAutoTone" class="btn-small" style="margin-left: auto; font-size: 0.65rem; position: relative; z-index: 20;">Auto-Tone</button>
+              </summary>
+              <div class="panel-content">
+                <div class="checkbox-row">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableHalftone" checked />
+                    <span class="slider"></span>
+                  </label>
+                  <span>Enable Halftone</span>
+                </div>
+                <div class="control-row">
+                  <label>Dot Size</label>
+                  <select id="patternScaleSelect">
+                    <option value="15">15 lpi (Bold)</option>
+                    <option value="30" selected>30 lpi (Standard)</option>
+                    <option value="45">45 lpi (Fine)</option>
+                    <option value="65">65 lpi (Ultra fine)</option>
+                  </select>
+                </div>
+                <div class="control-row">
+                  <label>Angle</label>
+                  <input type="number" id="patternAngleInput" value="22.5" step="0.5" />
+                </div>
+                <div class="control-row">
+                  <label>Halftone Shape</label>
+                  <select id="halftoneShape">
+                    <option value="0">Round</option>
+                    <option value="1">Ellipse</option>
+                    <option value="2">Diamond</option>
+                    <option value="3">Square</option>
+                    <option value="4">Line</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+
+            <!-- 5. LEVELS -->
+            <details>
+              <summary><span>☀️ Levels</span></summary>
+              <div class="panel-content">
+                <div class="levels-section">
+                  <div class="levels-label">Input Levels</div>
+                  <div class="histogram-box">
+                    <canvas id="histogramCanvas" width="300" height="60"></canvas>
+                    <div class="slider-track">
+                      <div class="slider-gradient"></div>
+                      <input type="range" id="levelsWhiteSlider" min="1" max="255" value="255" step="1" class="level-slider white" />
+                      <input type="range" id="levelsMidSlider" min="0.10" max="9.99" step="0.01" value="1.01" class="level-slider mid" />
+                      <input type="range" id="levelsBlackSlider" min="0" max="254" value="0" step="1" class="level-slider black" />
+                    </div>
+                  </div>
+                  <div class="levels-inputs-row">
+                    <input type="number" id="levelsBlack" value="0" min="0" max="254" />
+                    <input type="number" id="levelsMid" value="1.01" step="0.01" min="0.10" max="9.99" />
+                    <input type="number" id="levelsWhite" value="255" min="1" max="255" />
+                  </div>
+                  
+                  <div class="levels-label" style="margin-top: 1.5rem;">Output Levels</div>
+                  <div class="slider-track">
+                    <div class="slider-gradient"></div>
+                    <input type="range" id="levelsOutWhiteSlider" min="1" max="255" value="255" step="1" class="level-slider white" />
+                    <input type="range" id="levelsOutBlackSlider" min="0" max="254" value="0" step="1" class="level-slider black" />
+                  </div>
+                  <div class="levels-inputs-row">
+                    <input type="number" id="levelsOutBlack" value="0" min="0" max="254" />
+                    <input type="number" id="levelsOutWhite" value="255" min="1" max="255" />
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- 6. CLEANUP -->
+            <details>
+              <summary><span>🎯 Cleanup</span></summary>
+              <div class="panel-content">
+                <div class="control-row">
+                  <label>Cleanup Intensity</label>
+                  <div class="input-group">
+                    <input type="range" id="cleanupIntensity" min="0" max="100" step="1" value="39" />
+                    <input type="number" id="cleanupIntensityNum" min="0" max="100" step="1" value="39" />
+                    <span style="color: var(--muted); font-size: 0.75rem;">%</span>
+                  </div>
+                </div>
+                <div class="control-row">
+                  <label>Micro-Dot Cleanup</label>
+                  <div class="input-group">
+                    <input type="range" id="microDot" min="0" max="10" step="1" value="10" />
+                    <input type="number" id="microDotNum" min="0" max="10" step="1" value="10" />
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- 7. UNDERBASE -->
+            <details>
+              <summary><span>🥞 Underbase</span></summary>
+              <div class="panel-content">
+                <div class="checkbox-row">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableUnderbase" />
+                    <span class="slider"></span>
+                  </label>
+                  <span>Underbase</span>
+                </div>
+                <div class="help-text">When on, Export also saves a separate white-underbase PNG. The choke shrinks only the underbase, not the color.</div>
+                <div class="control-row">
+                  <label>Choke</label>
+                  <div class="input-group">
+                    <input type="range" id="chokePx" min="0" max="5" step="1" value="1" />
+                    <input type="number" id="chokePxNum" min="0" max="5" step="1" value="1" />
+                    <span style="font-size: 0.75rem; color: var(--muted);">px</span>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <button type="button" id="btnApply" class="btn-primary" style="display: none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Generate DTF Output
+            </button>
+
+          </div>
+
+          <!-- INITIAL APPLY BUTTON -->
+          <button type="button" id="btnInitialApply" class="btn-primary">Generate DTF Output</button>
+
+        </form>
+      </aside>
+
+      <!-- Main Workspace -->
+      <section class="workspace" id="dropZone">
+        <div class="canvas-toolbar">
+          <div class="view-modes">
+            <label><input type="radio" name="view" value="composite" checked /> Original</label>
+            <label><input type="radio" name="view" value="color" /> Separation</label>
+            <label><input type="radio" name="view" value="white" /> Underbase</label>
+          </div>
+          <div class="zoom-controls">
+            <button class="btn-icon" onclick="setZoom(50)">50%</button>
+            <button class="btn-icon" onclick="setZoom(100)">100%</button>
+            <button class="btn-icon" onclick="setZoom(200)">200%</button>
+          </div>
+        </div>
+
+        <div class="canvas-area">
+          <div class="canvas-container" id="canvasContainer">
+            <canvas id="canvas" style="--zoom: 1;"></canvas>
+            
+            <div id="empty-state">
+              <div class="empty-icon">⬚</div>
+              <p>Drag & Drop your image here</p>
+              <span>or</span>
+              <label class="file-input-btn">
+                <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" />
+                Choose Image
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+  </body>
+</html>

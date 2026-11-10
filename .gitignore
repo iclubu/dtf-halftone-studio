@@ -1,0 +1,22 @@
+# Allowlist: only the apps, README and the converted example go to GitHub.
+# Everything else in this folder (review notes, backups, source art) stays local.
+/*
+!/.gitignore
+!/README.md
+!/halftone-studio.html
+
+!/examples/
+/examples/*
+!/examples/ghost-rider-converted-preview.jpg
+
+!/DTF App/
+/DTF App/*
+!/DTF App/src/
+!/DTF App/index.html
+!/DTF App/package.json
+!/DTF App/package-lock.json
+!/DTF App/tsconfig.json
+!/DTF App/vite.config.ts
+!/DTF App/DTF-TONES-Studio.html
+
+.DS_Store

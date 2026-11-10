@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTF Halftone Studio</title>
+<style>
+  :root { --bg:#141414; --panel:#1e1e1e; --line:#333; --txt:#eee; --dim:#999; --acc:#f5a623; --ok:#7dc383; --warn:#f5a623; --bad:#e5534b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  header h1 { margin:0; font-size:20px; }
+  header span { color:var(--dim); font-size:13px; }
+  main { display:flex; gap:0; min-height:calc(100vh - 57px); }
+  #controls { width:330px; min-width:330px; background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow-y:auto; max-height:calc(100vh - 57px); }
+  #controls h3 { margin:18px 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--acc); }
+  #controls h3:first-child { margin-top:0; }
+  .row { margin:8px 0; }
+  label { display:flex; justify-content:space-between; font-size:13px; color:var(--dim); margin-bottom:4px; }
+  label b { color:var(--txt); font-weight:600; }
+  input[type=range] { width:100%; }
+  input[type=color] { width:44px; height:30px; border:1px solid var(--line); background:none; padding:2px; }
+  select, input[type=number], input[type=text] { width:100%; padding:7px; background:#111; color:var(--txt); border:1px solid var(--line); border-radius:6px; }
+  .check { display:flex; align-items:center; gap:8px; font-size:14px; margin:8px 0; }
+  .check input { width:16px; height:16px; }
+  button { width:100%; padding:10px; margin:6px 0; border:0; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; background:#2a2a2a; color:var(--txt); }
+  .primary { background:var(--acc); color:#111; }
+  button:disabled { opacity:.45; cursor:default; }
+  .btnrow { display:flex; gap:6px; }
+  .btnrow button { margin:2px 0; padding:7px 4px; font-size:12px; }
+  .colorrow { display:flex; align-items:center; gap:8px; }
+  .colorrow button { width:auto; flex:1; margin:0; padding:7px; font-size:12px; }
+  #drop { border:2px dashed #555; border-radius:10px; padding:22px 10px; text-align:center; color:var(--dim); font-size:14px; cursor:pointer; }
+  #drop:hover { border-color:var(--acc); color:var(--txt); }
+  #stage { flex:1; display:flex; flex-direction:column; align-items:center; padding:20px; overflow:auto; }
+  #viewbar { display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:8px 14px; margin-bottom:12px; font-size:14px; color:var(--dim); }
+  #viewbar select { width:auto; min-width:220px; }
+  #preview { max-width:100%; max-height:calc(100vh - 170px); border:1px solid var(--line); border-radius:8px; background:#222; cursor:crosshair; }
+  #info { color:var(--dim); font-size:13px; margin-top:10px; text-align:center; max-width:900px; }
+  #progress { width:100%; max-width:560px; height:8px; background:#2a2a2a; border-radius:4px; margin-top:10px; display:none; }
+  #progress i { display:block; height:100%; width:0; background:var(--acc); border-radius:4px; }
+  .hint { font-size:12px; color:var(--dim); margin-top:4px; }
+  #sizeTable { width:100%; border-collapse:collapse; font-size:12px; color:var(--dim); margin:6px 0; }
+  #sizeTable th, #sizeTable td { border-bottom:1px solid var(--line); padding:3px 4px; text-align:right; }
+  #sizeTable th:first-child, #sizeTable td:first-child { text-align:left; }
+  #sizeTable input { width:58px; background:#1a1a1a; color:#eee; border:1px solid var(--line); border-radius:4px; padding:2px 4px; font-size:12px; }
+  #checkOut { font-size:12px; margin-top:6px; }
+  #checkOut div { padding:3px 0; border-bottom:1px solid var(--line); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  footer { padding:10px 20px; border-top:1px solid var(--line); color:var(--dim); font-size:12px; }
+  @media (max-width:760px){ main{flex-direction:column;} #controls{width:100%;max-height:none;border-right:0;border-bottom:1px solid var(--line);} }
+</style>
+</head>
+<body>
+<header><h1>DTF Halftone Studio</h1><span>v6 — DTF prepress in your browser: soft knockout, levels, fade halftone, edge-only underbase choke, print check</span></header>
+<main>
+  <div id="controls">
+    <h3>1 · Artwork</h3>
+    <div id="drop">Drop an image here<br>or click to browse<input type="file" id="file" accept="image/*" style="display:none"></div>
+    <div class="hint" id="fileDpi"></div>
+    <button id="useFileSizeBtn" style="display:none">Use the file's tagged size</button>
+    <div class="row"><label>Print width <b><span id="widthInVal">10</span> in</b></label>
+      <input type="range" id="widthIn" min="2.5" max="16" step="0.05" value="10"></div>
+    <div class="hint">Export is always rendered at 300 DPI at this width, and the PNG is tagged 300 DPI.</div>
+    <div class="hint" id="dpiWarn" style="display:none"></div>
+    <div class="row"><label>Shirt size</label>
+      <select id="shirtSize">
+        <option value="" selected>Pick a size…</option>
+        <option>Youth S</option><option>Youth M</option><option>Youth L</option>
+        <option>Adult XS</option><option>Adult S</option><option>Adult M</option>
+        <option>Adult L</option><option>Adult XL</option><option>Adult 2XL</option>
+        <option>Adult 3XL</option><option>Adult 4XL</option><option>Adult 5XL</option>
+      </select></div>
+    <div class="row"><label>Placement</label>
+      <select id="placement">
+        <option value="front" selected>Full front</option>
+        <option value="back">Full back</option>
+        <option value="chest">Left chest</option>
+      </select></div>
+    <div class="hint" id="sizeGuide">Pick a shirt size and placement to set the print width to the recommended size.</div>
+    <button id="useRecBtn" style="display:none">Use recommended width</button>
+    <div class="hint" id="printSize"></div>
+    <table id="sizeTable"></table>
+    <div class="row" style="margin-top:6px"><button id="editGuideBtn">Edit sizes</button>
+      <button id="resetGuideBtn" style="display:none">Reset to standard</button></div>
+    <div class="hint">Pick a size to set the width, or drag the slider to use your own. Edits save in this browser. Widths: Lion DTF sizing chart. Max heights: Transfer Kingdom. Measure the actual garment.</div>
+
+    <h3>2 · Knockout</h3>
+    <div class="check"><input type="checkbox" id="knockout" data-k="knockout" checked> Remove the shirt / background color</div>
+    <div class="row"><label>Knockout color <b>click preview to sample</b></label>
+      <div class="colorrow"><input type="color" id="bg" data-k="bg" value="#000000"><button id="matchGarmentBtn">Match garment</button></div></div>
+    <div class="hint" id="koWarn" style="display:none"></div>
+    <div class="row"><label>Drop range <b id="dropRangeVal">30</b></label>
+      <input type="range" id="dropRange" data-k="drop" min="0" max="120" step="1" value="30"></div>
+    <div class="hint" style="margin-top:-2px">Colors this close to the knockout color are removed completely (the shirt shows through).</div>
+    <div class="row"><label>Fade width <b id="fadeVal">60</b></label>
+      <input type="range" id="fade" data-k="fade" min="0" max="200" step="1" value="60"></div>
+    <div class="hint" style="margin-top:-2px">Past the drop range, ink fades in as dots over this range instead of a hard cut. Distance is measured per channel, so saturated dark reds and blues are protected.</div>
+
+    <h3>3 · Tone (levels)</h3>
+    <div class="row"><label>Black point <b id="lvBVal">0</b></label>
+      <input type="range" id="lvB" data-k="lvB" min="0" max="200" step="1" value="0"></div>
+    <div class="row"><label>Gray (gamma) <b id="lvGVal">1</b></label>
+      <input type="range" id="lvG" data-k="lvG" min="0.2" max="4" step="0.05" value="1"></div>
+    <div class="row"><label>White point <b id="lvWVal">255</b></label>
+      <input type="range" id="lvW" data-k="lvW" min="20" max="255" step="1" value="255"></div>
+    <div class="btnrow"><button id="lvNeutral">Neutral</button><button id="lvDtf">DTF fades (7 / 2.0 / 100)</button><button id="lvAuto">Auto</button></div>
+    <div class="hint">Levels shape the ink strength before dots are made. A lower white point makes more of the art solid. Gray &gt; 1 strengthens the fades.</div>
+
+    <h3>4 · Halftone screen</h3>
+    <div class="row"><label>Output</label>
+      <select id="output" data-k="output">
+        <option value="color" selected>Full color halftone (DTF)</option>
+        <option value="single">Single ink (screen print)</option>
+      </select></div>
+    <div class="row" id="inkRow" style="display:none"><label>Ink color</label>
+      <input type="color" id="ink" data-k="ink" value="#141414"></div>
+    <div class="row"><label>Halftone mode</label>
+      <select id="htmode" data-k="htmode">
+        <option value="fades" selected>Fades &amp; shadows (recommended)</option>
+        <option value="full">Full design</option>
+        <option value="off">Off (hard edges, no dots)</option>
+      </select></div>
+    <div class="hint" id="modeHint"></div>
+    <div class="row"><label>Dot frequency (LPI) <b id="lpiVal">35</b></label>
+      <input type="range" id="lpi" data-k="lpi" min="15" max="85" step="1" value="35"></div>
+    <div class="row"><label>Screen angle <b><span id="angleVal">22.5</span>°</b></label>
+      <input type="range" id="angle" data-k="angle" min="0" max="90" step="0.5" value="22.5"></div>
+    <div class="row"><label>Dot shape</label>
+      <select id="shape" data-k="shape">
+        <option value="round" selected>Round</option>
+        <option value="ellipse">Ellipse</option>
+        <option value="square">Square</option>
+        <option value="diamond">Diamond</option>
+        <option value="line">Line</option>
+      </select></div>
+    <div class="row"><label>Solid above <b><span id="solidVal">85</span>%</b></label>
+      <input type="range" id="solid" data-k="solid" data-scale="0.01" min="50" max="100" step="1" value="85"></div>
+    <div class="row"><label>Smallest dot <b><span id="minDotMMVal">0.45</span> mm</b></label>
+      <input type="range" id="minDotMM" data-k="minDotMM" min="0" max="1" step="0.05" value="0.45"></div>
+    <div class="row"><select id="minMode" data-k="minMode">
+        <option value="grow" selected>Below it: grow to the smallest dot and thin out (recommended)</option>
+        <option value="drop">Below it: drop the dot</option>
+      </select></div>
+    <div class="hint" id="minDotHint"></div>
+    <div class="row"><label>Dot gain compensation <b><span id="gainVal">0</span>%</b></label>
+      <input type="range" id="gain" data-k="gain" data-scale="0.01" min="0" max="10" step="1" value="0"></div>
+    <div class="row"><label>Edge protection <b><span id="edgeVal">3</span> px</b></label>
+      <input type="range" id="edge" data-k="edge" min="0" max="8" step="1" value="3"></div>
+    <div class="hint" style="margin-top:-2px">Soft edges this close to solid ink become clean hard edges, not ragged dots (the cause of white edges).</div>
+
+    <h3>5 · White underbase</h3>
+    <div class="check"><input type="checkbox" id="underbase" data-k="underbase" checked> Generate underbase</div>
+    <div class="row"><label>Choke (outer edge only) <b><span id="chokeVal">2</span> px @300dpi</b></label>
+      <input type="range" id="choke" data-k="choke" min="0" max="8" step="1" value="2"></div>
+    <div class="check"><input type="checkbox" id="protectThin" data-k="protectThin" checked> Protect thin lines (keep a white core)</div>
+    <div class="check"><input type="checkbox" id="noWhiteBlack" data-k="noWhiteBlack"> No white under blacks</div>
+    <div class="hint">White goes exactly under the ink and every halftone dot keeps its white. Only the outside edge of solid areas is choked. The color PNG is never choked.</div>
+
+    <h3>6 · Preview, check &amp; export</h3>
+    <div class="row"><label>Garment color</label><input type="color" id="garment" data-k="garment" value="#1b1b1b"></div>
+    <button class="primary" id="exportHalftone" disabled>Export halftone PNG · 300 DPI</button>
+    <button id="exportUnderbase" disabled>Export underbase PNG · 300 DPI</button>
+    <button id="checkBtn" disabled>Run print check (full 300 DPI)</button>
+    <div id="checkOut"></div>
+    <button id="wedgeBtn">Export test wedge (LPI × coverage)</button>
+    <div class="hint">The test wedge uses your shape, angle and smallest-dot settings at 25–55 LPI. Print it once per shop or printer, then pick the settings where every dot survives.</div>
+  </div>
+  <div id="stage">
+    <div id="viewbar"><span>View:</span>
+      <select id="mode" data-k="mode">
+        <option value="original" selected>Original</option>
+        <option value="composite">Final on garment</option>
+        <option value="lineup">Garment lineup (6 colors)</option>
+        <option value="halftone">Separation (halftone)</option>
+        <option value="underbase">Underbase</option>
+        <option value="problems">Print problems</option>
+      </select>
+    </div>
+    <canvas id="preview" width="800" height="800"></canvas>
+    <div id="progress"><i></i></div>
+    <p id="info">Load an image to begin.</p>
+  </div>
+</main>
+<footer><b>How DTF works:</b> export one transparent sRGB PNG at 300 DPI, unmirrored. The RIP converts to CMYK+white, builds the white underbase from the PNG's transparency, mirrors for film and screens tone itself. <b>Halftone fades only</b>: solid areas stay solid. The separate underbase file is white exactly under the ink, choked at the outer edge only. Every pixel is either fully on or fully off. Nothing leaves your browser.</footer>
+<script>
+"use strict";
+/* ---------- state ---------- */
+const S = { img:null, fileDpi:null, widthIn:10, mode:'original',
+  knockout:true, bg:'#000000', drop:30, fade:60,
+  lvB:0, lvG:1, lvW:255,
+  output:'color', ink:'#141414', htmode:'fades', lpi:35, angle:22.5, shape:'round',
+  solid:0.85, minDotMM:0.45, minMode:'grow', gain:0, edge:3,
+  underbase:true, choke:2, protectThin:true, noWhiteBlack:false,
+  garment:'#1b1b1b' };
+const $ = id => document.getElementById(id);
+const preview = $('preview'), pctx = preview.getContext('2d');
+let lastWork=null, lastMasks=null, busy=false;
+const LINEUP=[['Current',null],['Black','#000000'],['White','#ffffff'],['Navy','#1f2a44'],['Heather','#9a9a9a'],['Red','#b22222']];
+
+function hexRGB(h){ h=h.replace('#',''); return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)]; }
+function lum(r,g,b){ return (0.299*r+0.587*g+0.114*b)/255; }
+const tick = () => new Promise(r=>setTimeout(r,0));
+function fmtIn(v){ return (Math.round(v*100)/100).toString(); }
+function setProgress(p){ const bar=$('progress'); if(p==null){bar.style.display='none';return;}
+  bar.style.display='block'; bar.firstElementChild.style.width=(p*100).toFixed(1)+'%'; }
+
+function drawScaled(img, W){
+  const H=Math.max(1,Math.round(W*img.naturalHeight/img.naturalWidth));
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const x=c.getContext('2d',{willReadFrequently:true});
+  x.imageSmoothingEnabled=true; x.imageSmoothingQuality='high';
+  x.drawImage(img,0,0,W,H);
+  return { imgData:x.getImageData(0,0,W,H), w:W, h:H }; // never modified: the pristine source
+}
+
+/* ---------- PNG metadata: pHYs (DPI) + sRGB ---------- */
+const CRC_T=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u){ let c=0xFFFFFFFF; for(let i=0;i<u.length;i++) c=CRC_T[(c^u[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function pngChunk(type,data){
+  const out=new Uint8Array(12+data.length), v=new DataView(out.buffer);
+  v.setUint32(0,data.length); for(let i=0;i<4;i++) out[4+i]=type.charCodeAt(i);
+  out.set(data,8); v.setUint32(8+data.length, crc32(out.subarray(4,8+data.length))); return out;
+}
+async function tagPNG(blob,dpi){
+  const u=new Uint8Array(await blob.arrayBuffer()), dv=new DataView(u.buffer), parts=[u.subarray(0,8)];
+  const ppm=Math.round(dpi/0.0254), p=new Uint8Array(9), pv=new DataView(p.buffer);
+  pv.setUint32(0,ppm); pv.setUint32(4,ppm); p[8]=1; // unit: metre
+  let i=8;
+  while(i+8<=u.length){
+    const len=dv.getUint32(i), type=String.fromCharCode(u[i+4],u[i+5],u[i+6],u[i+7]), end=i+12+len;
+    if(!['pHYs','sRGB','iCCP','gAMA','cHRM'].includes(type)) parts.push(u.subarray(i,end));
+    if(type==='IHDR') parts.push(pngChunk('sRGB',new Uint8Array([0])), pngChunk('pHYs',p));
+    i=end;
+  }
+  return new Blob(parts,{type:'image/png'});
+}
+async function readFileDPI(f){
+  const u=new Uint8Array(await f.slice(0,512*1024).arrayBuffer());
+  const u32=i=>((u[i]<<24)|(u[i+1]<<16)|(u[i+2]<<8)|u[i+3])>>>0;
+  if(u[0]===0x89&&u[1]===0x50&&u[2]===0x4E){ // PNG
+    let i=8; while(i+12<=u.length){ const len=u32(i), t=String.fromCharCode(u[i+4],u[i+5],u[i+6],u[i+7]);
+      if(t==='pHYs') return u[i+16]===1 ? Math.round(u32(i+8)*0.0254) : null;
+      if(t==='IDAT') break; i+=12+len; }
+    return null;
+  }
+  if(u[0]===0xFF&&u[1]===0xD8){ // JPEG: JFIF density, else EXIF XResolution (Photoshop often writes only EXIF)
+    let jfif=null, exif=null;
+    let i=2; while(i+4<u.length&&u[i]===0xFF){ const m=u[i+1], len=(u[i+2]<<8)|u[i+3];
+      if(m===0xE0&&u[i+4]===0x4A&&u[i+5]===0x46&&u[i+6]===0x49&&u[i+7]===0x46){
+        const unit=u[i+11], xd=(u[i+12]<<8)|u[i+13]; jfif=unit===1?xd:unit===2?Math.round(xd*2.54):null; }
+      if(m===0xE1&&u[i+4]===0x45&&u[i+5]===0x78&&u[i+6]===0x69&&u[i+7]===0x66) exif=readExifDPI(u,i+10,Math.min(u.length,i+2+len));
+      if(m===0xDA) break; i+=2+len; }
+    return jfif||exif||null;
+  }
+  return null;
+}
+function readExifDPI(u,t,end){ // t = start of the TIFF header inside APP1
+  if(t+8>end) return null;
+  const le=u[t]===0x49, r16=o=>le?u[o]|(u[o+1]<<8):(u[o]<<8)|u[o+1],
+    r32=o=>(le?(u[o]|(u[o+1]<<8)|(u[o+2]<<16)|(u[o+3]<<24)):((u[o]<<24)|(u[o+1]<<16)|(u[o+2]<<8)|u[o+3]))>>>0;
+  const ifd=t+r32(t+4); if(ifd+2>end) return null;
+  let xres=null, unit=2; // EXIF default unit: inch
+  for(let k=0,n=r16(ifd);k<n;k++){ const e=ifd+2+k*12; if(e+12>end) break; const tag=r16(e);
+    if(tag===0x011A){ const o=t+r32(e+8); if(o+8<=end){ const den=r32(o+4); if(den) xres=r32(o)/den; } }
+    if(tag===0x0128) unit=r16(e+8); }
+  if(!xres) return null;
+  return unit===2?Math.round(xres):unit===3?Math.round(xres*2.54):null;
+}
+
+/* ---------- morphology: exact Euclidean distance transform (Felzenszwalb) ---------- */
+function edt1d(f,n,d,v,z){
+  let k=0; v[0]=0; z[0]=-1e30; z[1]=1e30;
+  for(let q=1;q<n;q++){
+    let s=((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]);
+    while(s<=z[k]){ k--; s=((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]); }
+    k++; v[k]=q; z[k]=s; z[k+1]=1e30;
+  }
+  k=0; for(let q=0;q<n;q++){ while(z[k+1]<q) k++; const dq=q-v[k]; d[q]=dq*dq+f[v[k]]; }
+}
+// squared distance from every pixel to the nearest pixel whose mask value === target
+function distSq(m,w,h,target){
+  const INF=1e20, D=new Float32Array(w*h), n=Math.max(w,h);
+  const f=new Float64Array(n), d=new Float64Array(n), v=new Int32Array(n), z=new Float64Array(n+1);
+  for(let x=0;x<w;x++){ for(let y=0;y<h;y++) f[y]=(m[y*w+x]===target)?0:INF; edt1d(f,h,d,v,z); for(let y=0;y<h;y++) D[y*w+x]=d[y]; }
+  for(let y=0;y<h;y++){ const o=y*w; for(let x=0;x<w;x++) f[x]=D[o+x]; edt1d(f,w,d,v,z); for(let x=0;x<w;x++) D[o+x]=d[x]; }
+  return D;
+}
+function erodeR(m,w,h,r){ // round erosion; outside the image counts as empty
+  if(r<=0) return m;
+  const D=distSq(m,w,h,0), r2=r*r, o=new Uint8Array(w*h);
+  for(let y=0;y<h;y++){ const by=Math.min(y+1,h-y); for(let x=0;x<w;x++){ const i=y*w+x; if(!m[i]) continue;
+    const b=Math.min(by,x+1,w-x); if(D[i]>r2&&b*b>r2) o[i]=1; } }
+  return o;
+}
+function dilateR(m,w,h,r){ if(r<=0) return m; const D=distSq(m,w,h,1), r2=r*r, o=new Uint8Array(w*h); for(let i=0;i<o.length;i++) if(D[i]<=r2) o[i]=1; return o; }
+function erode1(m,w,h){ const o=new Uint8Array(w*h);
+  for(let y=1;y<h-1;y++){ const r=y*w; for(let x=1;x<w-1;x++){ const i=r+x;
+    if(m[i]&&m[i-1]&&m[i+1]&&m[i-w]&&m[i+w]&&m[i-w-1]&&m[i-w+1]&&m[i+w-1]&&m[i+w+1]) o[i]=1; } }
+  return o; }
+
+/* ---------- screen ---------- */
+function hash2(x,y){ let h=(Math.imul(x,374761393)+Math.imul(y,668265263))|0; h=Math.imul(h^(h>>>13),1274126177); return ((h^(h>>>16))>>>0)/4294967296; }
+function minDotT(P){ // smallest printable dot as a fraction of the cell (independent of DPI)
+  if(P.minDotMM<=0) return 0.01;
+  const d=P.minDotMM*P.lpi/25.4; return Math.min(0.6, Math.PI*d*d/4);
+}
+function makeScreen(P,dpi,covAt){ // covAt(x,y): coverage at a point; when given, each dot is sized from its cell center
+  const cellPx=Math.max(1.5,dpi/P.lpi), A=P.angle*Math.PI/180, cosA=Math.cos(A), sinA=Math.sin(A);
+  const minT=minDotT(P), grow=P.minMode==='grow', shape=P.shape;
+  return function(x,y,t){
+    const qx=(x*cosA+y*sinA)/cellPx, qy=(-x*sinA+y*cosA)/cellPx, cx=Math.floor(qx), cy=Math.floor(qy);
+    if(covAt){ const ux=(cx+0.5)*cellPx, uy=(cy+0.5)*cellPx; t=covAt(ux*cosA-uy*sinA, ux*sinA+uy*cosA); if(t<=0) return false; }
+    if(t<minT){ if(!grow||hash2(cx,cy)*minT>=t) return false; t=minT; } // keep dot at min size with probability t/minT
+    const dx=qx-cx-0.5, dy=qy-cy-0.5;
+    if(shape==='round'){ const r2=t/Math.PI; return dx*dx+dy*dy<=r2; }
+    if(shape==='square'){ const s=Math.sqrt(t)/2; return Math.abs(dx)<=s&&Math.abs(dy)<=s; }
+    if(shape==='diamond'){ return Math.abs(dx)+Math.abs(dy)<=Math.sqrt(t/2); }
+    if(shape==='ellipse'){ const rx=0.5,ry=0.32,s2=t/(Math.PI*rx*ry); return (dx*dx)/(rx*rx)+(dy*dy)/(ry*ry)<=s2; }
+    return Math.abs(dy)<=t/2; // line
+  };
+}
+
+// remove free-standing specks of dot ink smaller than minArea px (they can't hold powder or white)
+function removeSpecks(ink,type,w,h,minArea){
+  const n=w*h, seen=new Uint8Array(n), stack=new Int32Array(n), comp=new Int32Array(Math.ceil(minArea)+1);
+  let removed=0;
+  for(let s=0;s<n;s++){
+    if(!ink[s]||seen[s]||type[s]!==2) continue;
+    let sp=0, size=0, solidPart=false; stack[sp++]=s; seen[s]=1;
+    while(sp){ const p=stack[--sp]; if(size<comp.length) comp[size]=p; size++; if(type[p]===1) solidPart=true;
+      const x=p%w;
+      if(x>0&&ink[p-1]&&!seen[p-1]){ seen[p-1]=1; stack[sp++]=p-1; }
+      if(x<w-1&&ink[p+1]&&!seen[p+1]){ seen[p+1]=1; stack[sp++]=p+1; }
+      if(p>=w&&ink[p-w]&&!seen[p-w]){ seen[p-w]=1; stack[sp++]=p-w; }
+      if(p<n-w&&ink[p+w]&&!seen[p+w]){ seen[p+w]=1; stack[sp++]=p+w; } }
+    if(!solidPart&&size<minArea){ for(let k=0;k<size;k++){ ink[comp[k]]=0; type[comp[k]]=0; } removed++; }
+  }
+  return removed;
+}
+
+/* ---------- engine ---------- */
+async function buildMasks(work,dpi,P,onP){
+  const {w,h}=work, px=work.imgData.data, n=w*h;
+  const cov=new Float32Array(n), hist=new Uint32Array(256);
+  const full=P.htmode==='full', off=P.htmode==='off';
+  const kc=hexRGB(P.knockout?P.bg:P.garment), useKO=P.knockout||full;
+  const inkRGB=hexRGB(P.ink), darkInk=lum(...inkRGB)<0.5;
+  const B=P.lvB/255, Wp=Math.max(B+1/255,P.lvW/255), invG=1/P.lvG, gc=1-P.gain;
+  // 1) coverage: alpha × knockout ramp, then levels
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i=y*w+x, j=i*4, a=px[j+3]/255; if(a<0.004) continue;
+      const r=px[j],g=px[j+1],b=px[j+2];
+      let c = P.output==='single' ? (darkInk?1-lum(r,g,b):lum(r,g,b))*a : a;
+      if(useKO){
+        const d=Math.max(Math.abs(r-kc[0]),Math.abs(g-kc[1]),Math.abs(b-kc[2]));
+        let k;
+        if(d<=P.drop) k=0;
+        else if(full) k=Math.min(1,(d-P.drop)/Math.max(1,255-P.drop)); // whole tonal range becomes dots
+        else k=(!P.knockout||P.fade<=0)?1:Math.min(1,(d-P.drop)/P.fade);
+        c*=k;
+      }
+      if(c<=0) continue;
+      hist[Math.min(255,(c*255)|0)]++;
+      cov[i]= c<=B?0 : c>=Wp?1 : Math.pow((c-B)/(Wp-B),invG);
+    }
+    if((y&255)===0){ onP&&onP(0.35*y/h); await tick(); }
+  }
+  // 2) solid / edge protection / dots
+  const ink=new Uint8Array(n), type=new Uint8Array(n); // type 1 = solid or hard edge, 2 = dot
+  let near=null;
+  if(!off&&P.edge>0){ const solid=new Uint8Array(n); for(let i=0;i<n;i++) if(cov[i]>=P.solid) solid[i]=1;
+    near=dilateR(solid,w,h,P.edge*dpi/300); }
+  onP&&onP(0.45); await tick();
+  const covAt=(X,Y)=>{ const xi=Math.round(X), yi=Math.round(Y); if(xi<0||yi<0||xi>=w||yi>=h) return 0;
+    const c=cov[yi*w+xi]; return c>=P.solid?1:c*gc; };
+  const dot=makeScreen(P,dpi,covAt);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i=y*w+x, c=cov[i];
+      if(c>=P.solid&&!off){ ink[i]=1; type[i]=1; }                      // solid stays solid
+      else if(off||(near&&near[i])){ if(c>=0.5){ ink[i]=1; type[i]=1; } } // hard edge, no ragged dots
+      else if(dot(x,y,c)){ ink[i]=1; type[i]=2; }                         // fade -> whole dots sized at the cell center
+    }
+    if((y&255)===0){ onP&&onP(0.45+0.25*y/h); await tick(); }
+  }
+  let specks=0;
+  if(!off&&P.minDotMM>0){ const dpx=P.minDotMM/25.4*dpi; specks=removeSpecks(ink,type,w,h,Math.PI*dpx*dpx/4*0.6); }
+  // 3) underbase: white exactly under the ink, choked only at the outer edge of the design
+  let under=null, thin=null;
+  const st={inkPx:0,noWhitePx:0,thinLinePx:0,thinLineNoWhite:0,specks};
+  if(P.underbase){
+    const ck=P.choke*dpi/300;
+    const sil=new Uint8Array(n); for(let i=0;i<n;i++) if(cov[i]>0||ink[i]) sil[i]=1;
+    const inner=ck>0?erodeR(sil,w,h,ck):sil;
+    onP&&onP(0.8); await tick();
+    // every dot keeps its white; only solid / hard-edged ink is choked at the outer edge
+    under=new Uint8Array(n); for(let i=0;i<n;i++) if(ink[i]&&(type[i]===2||inner[i])) under[i]=1;
+    if(ck>0){
+      const opened=dilateR(erodeR(ink,w,h,ck),w,h,ck);
+      thin=new Uint8Array(n); for(let i=0;i<n;i++) if(ink[i]&&!opened[i]) thin[i]=1;
+      if(P.protectThin){ const core=erode1(ink,w,h); for(let i=0;i<n;i++) if(thin[i]&&core[i]) under[i]=1; }
+    }
+    if(P.noWhiteBlack){ for(let i=0;i<n;i++) if(under[i]){ const j=i*4; if(Math.max(px[j],px[j+1],px[j+2])<40) under[i]=0; } }
+    for(let i=0;i<n;i++) if(ink[i]){ st.inkPx++; if(!under[i]) st.noWhitePx++;
+      if(thin&&thin[i]&&type[i]===1){ st.thinLinePx++; if(!under[i]) st.thinLineNoWhite++; } }
+  } else for(let i=0;i<n;i++) if(ink[i]) st.inkPx++;
+  onP&&onP(1);
+  return {ink,type,under,thin,w,h,hist,stats:st,dpi};
+}
+
+/* ---------- compositing ---------- */
+function compositeTo(canvas,m,work,view,P,forExport){
+  const {w,h}=m; canvas.width=w; canvas.height=h; const c=canvas.getContext('2d');
+  if(view==='original'){ c.putImageData(work.imgData,0,0); return; }
+  const out=c.createImageData(w,h), o=out.data, spx=work.imgData.data;
+  const gar=hexRGB(P.garment), inkRGB=hexRGB(P.ink), color=P.output==='color';
+  const onGarment=view==='composite'||view==='problems', U=m.under;
+  for(let i=0;i<w*h;i++){
+    const j=i*4; let r=0,g=0,b=0,a=0;
+    if(onGarment){ r=gar[0];g=gar[1];b=gar[2];a=255; }
+    else if(!forExport){ const x=i%w,y=(i/w)|0, k=(((x>>4)+(y>>4))&1)?0x33:0x2a; r=g=b=k; a=255; }
+    if(view==='underbase'){ if(U&&U[i]){ r=g=b=255; a=255; } }
+    else {
+      if(onGarment&&U&&U[i]){ r=g=b=255; }
+      if(m.ink[i]){
+        let ir=color?spx[j]:inkRGB[0], ig=color?spx[j+1]:inkRGB[1], ib=color?spx[j+2]:inkRGB[2];
+        if(onGarment&&U&&!U[i]){ ir=(ir+gar[0])>>1; ig=(ig+gar[1])>>1; ib=(ib+gar[2])>>1; } // no white: ink sinks into the shirt
+        r=ir; g=ig; b=ib; a=255;
+      }
+      if(view==='problems'){
+        r=(r*0.35)|0; g=(g*0.35)|0; b=(b*0.35)|0;
+        if(U&&m.ink[i]&&!U[i]){ r=255; g=40; b=40; }
+        else if(m.thin&&m.thin[i]&&m.type[i]===1){ r=255; g=200; b=0; }
+      }
+    }
+    o[j]=r; o[j+1]=g; o[j+2]=b; o[j+3]=a;
+  }
+  c.putImageData(out,0,0);
+}
+function drawLineup(m,work,P){
+  const tw=Math.round(m.w/2), th=Math.round(m.h/2), lab=22, tmp=document.createElement('canvas');
+  preview.width=tw*3; preview.height=(th+lab)*2;
+  pctx.fillStyle='#181818'; pctx.fillRect(0,0,preview.width,preview.height);
+  LINEUP.forEach(([name,hex],k)=>{
+    const g=hex||P.garment; compositeTo(tmp,m,work,'composite',{...P,garment:g},false);
+    const x=(k%3)*tw, y=Math.floor(k/3)*(th+lab);
+    pctx.imageSmoothingQuality='high'; pctx.drawImage(tmp,x,y,tw,th);
+    pctx.fillStyle='#bbb'; pctx.font='13px system-ui'; pctx.textAlign='center';
+    pctx.fillText(name+(hex?'':' ('+g+')'),x+tw/2,y+th+16);
+  });
+}
+
+/* ---------- preview ---------- */
+let renderToken=0;
+async function renderPreview(){
+  if(!S.img){ return; }
+  const my=++renderToken, P={...S};
+  setProgress(0); $('info').textContent='Rendering preview…';
+  const W=Math.min(880,P.img.naturalWidth), work=drawScaled(P.img,W);
+  const dpi=W/P.widthIn;
+  const m=await buildMasks(work,dpi,P,p=>{ if(my===renderToken) setProgress(p); });
+  if(my!==renderToken) return;
+  lastWork=work; lastMasks=m;
+  if(P.mode==='lineup') drawLineup(m,work,P); else compositeTo(preview,m,work,P.mode,P,false);
+  setProgress(null);
+  const ew=Math.round(P.widthIn*300), eh=Math.round(ew*P.img.naturalHeight/P.img.naturalWidth);
+  let t=`Preview ${m.w}×${m.h} px · export ${ew}×${eh} px @300 DPI (${fmtIn(P.widthIn)} × ${fmtIn(eh/300)} in)`;
+  if(P.mode==='problems') t+=` · Red = ink with no white under it (${(100*m.stats.noWhitePx/Math.max(1,m.stats.inkPx)).toFixed(1)}% of ink). Yellow = lines thinner than 2× the choke. Run the print check for exact counts.`;
+  $('info').textContent=t;
+}
+let deb=null;
+function queueRender(){ clearTimeout(deb); deb=setTimeout(renderPreview,160); }
+
+/* ---------- hints / warnings ---------- */
+function updateDPI(){
+  const el=$('dpiWarn');
+  if(!S.img){ el.style.display='none'; return; }
+  const dpi=Math.round(S.img.naturalWidth/S.widthIn), maxW=(S.img.naturalWidth/300).toFixed(1);
+  el.style.display='';
+  if(dpi>=300){ el.className='hint ok'; el.textContent=`Effective ${dpi} DPI at ${fmtIn(S.widthIn)} in — print-ready.`; }
+  else if(dpi>=150){ el.className='hint warn'; el.textContent=`Effective ${dpi} DPI at ${fmtIn(S.widthIn)} in — below 300, edges will soften. True 300 DPI size is ${maxW} in wide.`; }
+  else { el.className='hint bad'; el.textContent=`Effective ${dpi} DPI at ${fmtIn(S.widthIn)} in — too low, will look soft/pixelated. True 300 DPI size is ${maxW} in wide. Use a larger file or print smaller.`; }
+}
+function showFileDpi(){
+  const el=$('fileDpi'), btn=$('useFileSizeBtn'); btn.style.display='none';
+  if(!S.img){ el.textContent=''; return; }
+  const d=S.fileDpi, px=S.img.naturalWidth;
+  if(!d){ el.className='hint warn'; el.textContent=`No DPI tag in this file (${px}×${S.img.naturalHeight} px) — the print width below sets the size.`; return; }
+  if(d<=96){ el.className='hint warn'; el.textContent=`File is tagged ${d} DPI — a screen default, not a real print size. Set the print width below.`; return; }
+  const win=px/d; el.className='hint ok'; el.textContent=`File is tagged ${d} DPI → ${fmtIn(win)} in wide.`;
+  if(win>=2.5&&win<=16){ btn.style.display=''; btn.textContent=`Use the file's tagged size (${fmtIn(win)} in)`; }
+}
+function updateHints(){
+  const ko=$('koWarn'), gl=lum(...hexRGB(S.garment)), bl=lum(...hexRGB(S.bg));
+  if(S.knockout&&Math.abs(gl-bl)>0.35){ ko.style.display=''; ko.className='hint warn';
+    ko.textContent=`The knockout color (${S.bg}) is very different from the garment (${S.garment}). On a ${gl>0.5?'light':'dark'} shirt you usually knock out the shirt color — try "Match garment".`; }
+  else ko.style.display='none';
+  $('modeHint').textContent = S.htmode==='fades' ? 'Dots only where the art fades (semi-transparency and the knockout fade). Solid areas stay solid.'
+    : S.htmode==='full' ? 'The whole design is screened by its distance from the knockout/garment color: colors near the shirt become small dots, strong colors stay solid.'
+    : 'No dots. Every pixel is fully on or off at 50% — best for most full-color DTF.';
+  const t=minDotT(S); $('minDotHint').textContent = S.minDotMM>0
+    ? `At ${S.lpi} LPI a ${S.minDotMM} mm dot is ${Math.round(t*100)}% of a cell. Tones below that ${S.minMode==='grow'?'print as fewer dots of that size':'are dropped'}.`
+    : 'No smallest dot — very small dots may not hold powder or white.';
+  $('inkRow').style.display=S.output==='color'?'none':'';
+  $('exportHalftone').textContent=S.htmode==='off'?'Export color PNG · 300 DPI':'Export halftone PNG · 300 DPI';
+}
+
+/* ---------- size guide ---------- */
+const SIZE_GUIDE = {
+  'Youth S':  {front:6.5,  back:7.25, chest:3,    maxH:11},
+  'Youth M':  {front:7.25, back:8,    chest:3,    maxH:null},
+  'Youth L':  {front:8,    back:8.75, chest:3,    maxH:null},
+  'Adult XS': {front:9.5,  back:null, chest:null, maxH:null},
+  'Adult S':  {front:9.75, back:10.25,chest:3.25, maxH:13},
+  'Adult M':  {front:10.25,back:10.8, chest:3.5,  maxH:13},
+  'Adult L':  {front:10.8, back:12,   chest:3.5,  maxH:14},
+  'Adult XL': {front:11.5, back:12.5, chest:3.5,  maxH:14},
+  'Adult 2XL':{front:12,   back:13.25,chest:3.75, maxH:15},
+  'Adult 3XL':{front:12.5, back:13.75,chest:3.75, maxH:null},
+  'Adult 4XL':{front:13,   back:14.25,chest:3.75, maxH:null},
+  'Adult 5XL':{front:13.5, back:14.75,chest:3.75, maxH:null},
+};
+const SIZE_GUIDE_DEFAULTS=JSON.parse(JSON.stringify(SIZE_GUIDE));
+let widthCustomized=false, editingGuide=false;
+function saveGuide(){ try{ localStorage.setItem('dtfSizeGuideV1', JSON.stringify(SIZE_GUIDE)); }catch(e){} }
+function loadGuide(){
+  try{
+    const s=JSON.parse(localStorage.getItem('dtfSizeGuideV1')||'null'); if(!s) return;
+    for(const k of Object.keys(SIZE_GUIDE)){
+      if(!s[k]) continue;
+      for(const p of ['front','back','chest']){
+        const v=+s[k][p]; if(v>=2&&v<=16) SIZE_GUIDE[k][p]=Math.round(v*100)/100;
+      }
+    }
+  }catch(e){}
+}
+const PLACEMENT_NAME={front:'Full front',back:'Full back',chest:'Left chest'};
+function setWidth(w){ S.widthIn=w; $('widthIn').value=w; $('widthInVal').textContent=fmtIn(w); updateDPI(); updatePrintSize(); queueRender(); }
+function updatePrintSize(){
+  const el=$('printSize');
+  if(!S.img){ el.textContent=''; return; }
+  const h=S.widthIn*S.img.naturalHeight/S.img.naturalWidth;
+  const g=SIZE_GUIDE[$('shirtSize').value];
+  let t=`Your print: ${fmtIn(S.widthIn)} × ${fmtIn(h)} in.`;
+  if(g&&g.maxH&&h>g.maxH) t+=` Taller than the usual max ${g.maxH} in for this size — check it fits the shirt.`;
+  el.textContent=t;
+}
+function applyGuide(force){
+  const size=$('shirtSize').value, place=$('placement').value;
+  const g=SIZE_GUIDE[size];
+  const el=$('sizeGuide');
+  if(!g){ el.textContent='Pick a shirt size and placement to set the print width to the recommended size.'; $('useRecBtn').style.display='none'; updatePrintSize(); return; }
+  const w=g[place];
+  if(w==null){ el.textContent=`${size} · ${PLACEMENT_NAME[place]} — no standard width published; Adult S is a starting point.`; $('useRecBtn').style.display='none'; updatePrintSize(); return; }
+  if(widthCustomized&&!force){
+    el.textContent=`${size} · ${PLACEMENT_NAME[place]} — recommended ${fmtIn(w)} in wide${g.maxH?` (max ${g.maxH} in tall)`:''}. You're using ${fmtIn(S.widthIn)} in (custom).`;
+    $('useRecBtn').style.display='';
+  } else {
+    widthCustomized=false; setWidth(w);
+    el.textContent=`${size} · ${PLACEMENT_NAME[place]} — recommended ${fmtIn(w)} in wide${g.maxH?` (max ${g.maxH} in tall)`:''}. Width set.`;
+    $('useRecBtn').style.display='none';
+  }
+  updatePrintSize();
+}
+$('useRecBtn').addEventListener('click',()=>applyGuide(true));
+function buildSizeTable(){
+  const t=$('sizeTable');
+  let h='<tr><th>Shirt size</th><th>Full front</th><th>Full back</th><th>Left chest</th></tr>';
+  for(const [size,g] of Object.entries(SIZE_GUIDE)){
+    h+='<tr><td>'+size+'</td>';
+    for(const p of ['front','back','chest']){
+      const v=g[p];
+      if(editingGuide) h+=`<td>${v==null?'—':`<input type="number" data-size="${size}" data-place="${p}" value="${v}" min="2" max="16" step="0.25">`}</td>`;
+      else h+=`<td>${v==null?'—':fmtIn(v)+'"'}</td>`;
+    }
+    h+='</tr>';
+  }
+  t.innerHTML=h;
+}
+$('sizeTable').addEventListener('input',e=>{
+  const inp=e.target; if(inp.tagName!=='INPUT') return;
+  const v=parseFloat(inp.value); if(!(v>=2&&v<=16)) return;
+  SIZE_GUIDE[inp.dataset.size][inp.dataset.place]=Math.round(v*100)/100;
+  saveGuide();
+  if(inp.dataset.size===$('shirtSize').value&&inp.dataset.place===$('placement').value&&!widthCustomized) applyGuide(true);
+});
+$('editGuideBtn').addEventListener('click',()=>{
+  editingGuide=!editingGuide;
+  $('editGuideBtn').textContent=editingGuide?'Done':'Edit sizes';
+  $('resetGuideBtn').style.display=editingGuide?'':'none';
+  buildSizeTable();
+});
+$('resetGuideBtn').addEventListener('click',()=>{
+  try{ localStorage.removeItem('dtfSizeGuideV1'); }catch(e){}
+  for(const k of Object.keys(SIZE_GUIDE)) Object.assign(SIZE_GUIDE[k], JSON.parse(JSON.stringify(SIZE_GUIDE_DEFAULTS[k])));
+  buildSizeTable(); applyGuide(true);
+});
+$('shirtSize').addEventListener('change',()=>applyGuide());
+$('placement').addEventListener('change',()=>applyGuide());
+loadGuide();
+buildSizeTable();
+
+/* ---------- loading ---------- */
+async function loadFile(f){
+  if(!f||!f.type.startsWith('image/')) return;
+  let dpi=null; try{ dpi=await readFileDPI(f); }catch(e){}
+  const url=URL.createObjectURL(f), img=new Image();
+  img.onload=()=>{ S.img=img; S.fileDpi=dpi; URL.revokeObjectURL(url);
+    ['exportHalftone','exportUnderbase','checkBtn'].forEach(id=>$(id).disabled=false);
+    $('checkOut').innerHTML='';
+    showFileDpi(); updateDPI(); updatePrintSize(); renderPreview(); };
+  img.src=url;
+}
+$('file').addEventListener('change',e=>loadFile(e.target.files[0]));
+const dropEl=$('drop');
+dropEl.addEventListener('click',()=>$('file').click());
+['dragover','dragenter'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.style.borderColor='#f5a623';}));
+['dragleave','drop'].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.style.borderColor='';}));
+dropEl.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
+$('useFileSizeBtn').addEventListener('click',()=>{ if(!S.fileDpi) return; widthCustomized=true; setWidth(Math.round(S.img.naturalWidth/S.fileDpi*100)/100); applyGuide(); });
+
+/* ---------- control bindings ---------- */
+document.querySelectorAll('[data-k]').forEach(el=>{
+  const k=el.dataset.k, sc=+(el.dataset.scale||1), isCheck=el.type==='checkbox';
+  const read=()=>{ S[k]= isCheck?el.checked : (el.type==='range'||el.type==='number')?parseFloat(el.value)*sc : el.value;
+    const lab=$(el.id+'Val'); if(lab) lab.textContent=String(+el.value); };
+  read();
+  el.addEventListener(isCheck||el.tagName==='SELECT'?'change':'input',()=>{ read(); updateHints(); queueRender(); });
+});
+$('widthIn').addEventListener('input',e=>{ widthCustomized=true; setWidth(parseFloat(e.target.value)); applyGuide(); });
+function setVal(id,v){ const el=$(id); el.value=v; el.dispatchEvent(new Event('input')); }
+$('lvNeutral').addEventListener('click',()=>{ setVal('lvB',0); setVal('lvG',1); setVal('lvW',255); });
+$('lvDtf').addEventListener('click',()=>{ setVal('lvB',7); setVal('lvG',2); setVal('lvW',100); });
+$('lvAuto').addEventListener('click',()=>{
+  if(!lastMasks) return; const hst=lastMasks.hist; let tot=0; for(const v of hst) tot+=v; if(!tot) return;
+  let s=0,lo=0,hi=255; for(let i=0;i<256;i++){ s+=hst[i]; if(s>tot*0.01){ lo=i; break; } }
+  s=0; for(let i=255;i>=0;i--){ s+=hst[i]; if(s>tot*0.005){ hi=i; break; } }
+  setVal('lvB',Math.min(lo,200)); setVal('lvG',1); setVal('lvW',Math.max(hi,lo+20,20));
+});
+$('matchGarmentBtn').addEventListener('click',()=>{ $('bg').value=S.garment; $('bg').dispatchEvent(new Event('input')); });
+
+// eyedropper: click the preview to sample the knockout color from the original art
+preview.addEventListener('click',e=>{
+  if(!lastWork||S.mode==='lineup') return;
+  const r=preview.getBoundingClientRect();
+  const x=Math.floor((e.clientX-r.left)*preview.width/r.width), y=Math.floor((e.clientY-r.top)*preview.height/r.height);
+  const wx=Math.floor(x*lastWork.w/preview.width), wy=Math.floor(y*lastWork.h/preview.height);
+  if(wx<0||wy<0||wx>=lastWork.w||wy>=lastWork.h) return;
+  const i=(wy*lastWork.w+wx)*4, d=lastWork.imgData.data;
+  const hex='#'+[d[i],d[i+1],d[i+2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+  $('bg').value=hex; $('bg').dispatchEvent(new Event('input'));
+  $('info').textContent='Sampled knockout color '+hex+' — re-rendering…';
+});
+
+/* ---------- export / check / wedge ---------- */
+function download(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+function setBusy(b){ busy=b; ['exportHalftone','exportUnderbase','checkBtn','wedgeBtn'].forEach(id=>$(id).disabled=b||(!S.img&&id!=='wedgeBtn')); }
+const MAX_EXPORT_PX=50e6; // ~50 MP needs well over 1 GB of working memory; browsers (Safari especially) fail above this
+async function renderFull(P){
+  const W=Math.round(P.widthIn*300), H=Math.round(W*P.img.naturalHeight/P.img.naturalWidth);
+  if(W*H>MAX_EXPORT_PX) throw new Error(`${W}×${H} px (${(W*H/1e6).toFixed(0)} MP) is too large to process in the browser. Reduce the print width or crop the art so it is under ${MAX_EXPORT_PX/1e6} MP.`);
+  const work=drawScaled(P.img,W);
+  const m=await buildMasks(work,300,P,p=>setProgress(p*0.95));
+  return {work,m};
+}
+async function exportPNG(layer){
+  if(!S.img||busy) return;
+  const P={...S}; setBusy(true); setProgress(0);
+  $('info').textContent='Rendering '+layer+' at 300 DPI…';
+  try{
+    const {work,m}=await renderFull(P);
+    const c=document.createElement('canvas');
+    compositeTo(c,m,work,layer==='underbase'?'underbase':'halftone',P,true);
+    const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    if(!blob) throw new Error('the browser could not encode an image this large');
+    const tag=layer==='underbase'?'underbase':(P.htmode==='off'?'dtf-color':(P.output==='color'?'dtf-color-halftone':'halftone'));
+    const name=`${tag}-300dpi-${fmtIn(P.widthIn)}in.png`;
+    download(await tagPNG(blob,300),name);
+    const st=m.stats;
+    $('info').textContent=`Exported ${name} — ${m.w}×${m.h} px, tagged 300 DPI (${fmtIn(m.w/300)} × ${fmtIn(m.h/300)} in), sRGB, hard alpha.`+
+      (P.underbase?` Ink without white: ${(100*st.noWhitePx/Math.max(1,st.inkPx)).toFixed(1)}%.`:'');
+  }catch(err){ $('info').textContent='Export failed: '+err.message; }
+  finally{ setProgress(null); setBusy(false); }
+}
+async function runCheck(){
+  if(!S.img||busy) return;
+  const P={...S}; setBusy(true); setProgress(0); $('info').textContent='Running print check at 300 DPI…';
+  try{
+    const {m}=await renderFull(P);
+    const {ink,type,under,w,h}=m, n=w*h, lab=new Int32Array(n), stack=new Int32Array(n);
+    let dots=0,dotsNoWhite=0,ncomp=0;
+    for(let s=0;s<n;s++){
+      if(!ink[s]||lab[s]) continue;
+      ncomp++; let sp=0, size=0, hasW=false, solidPart=false; stack[sp++]=s; lab[s]=ncomp;
+      while(sp){ const p=stack[--sp]; size++; if(under&&under[p]) hasW=true; if(type[p]===1) solidPart=true;
+        const x=p%w;
+        if(x>0){ const q=p-1; if(ink[q]&&!lab[q]){ lab[q]=ncomp; stack[sp++]=q; } }
+        if(x<w-1){ const q=p+1; if(ink[q]&&!lab[q]){ lab[q]=ncomp; stack[sp++]=q; } }
+        if(p>=w){ const q=p-w; if(ink[q]&&!lab[q]){ lab[q]=ncomp; stack[sp++]=q; } }
+        if(p<n-w){ const q=p+w; if(ink[q]&&!lab[q]){ lab[q]=ncomp; stack[sp++]=q; } } }
+      if(solidPart) continue; // attached to solid ink: not a free-standing dot
+      dots++; if(under&&!hasW) dotsNoWhite++;
+      if((ncomp&4095)===0){ setProgress(0.95+0.05*s/n); await tick(); }
+    }
+    const st=m.stats, eff=Math.round(P.img.naturalWidth/P.widthIn);
+    const row=(cls,txt)=>`<div class="${cls}">${txt}</div>`;
+    let html='';
+    html+=row('ok',`Export ${w}×${h} px = ${fmtIn(w/300)} × ${fmtIn(h/300)} in, tagged 300 DPI + sRGB.`);
+    html+=row(eff>=300?'ok':eff>=150?'warn':'bad',`Source resolution at this size: ${eff} DPI${eff<300?` (true 300 DPI width ${fmtIn(P.img.naturalWidth/300)} in)`:''}.`);
+    html+=row('ok','Hard alpha: the export writes only fully-on or fully-off pixels, so there is no semi-transparent haze.');
+    html+=row('ok',`Ink coverage: ${(100*st.inkPx/n).toFixed(1)}% of the canvas.`);
+    if(P.htmode!=='off'){
+      html+=row(P.minDotMM>0?'ok':'warn',`Dots: ${dots.toLocaleString()} · ${P.minDotMM>0?`free-standing specks smaller than ${P.minDotMM} mm removed: ${st.specks.toLocaleString()}`:'no smallest-dot limit set, so tiny dots may not hold powder or white'}.`);
+    }
+    if(P.underbase){
+      if(P.htmode!=='off') html+=row(dotsNoWhite===0?'ok':dotsNoWhite<dots*0.02?'warn':'bad',`Dots with no white under them: ${dotsNoWhite.toLocaleString()}${dots?` (${(100*dotsNoWhite/dots).toFixed(1)}%)`:''}.`);
+      html+=row(st.thinLineNoWhite===0?'ok':'warn',`Thin lines narrower than 2× the choke: ${st.thinLinePx.toLocaleString()} px${st.thinLinePx?`, ${st.thinLineNoWhite.toLocaleString()} px with no white${P.protectThin?' (protected core kept)':' — turn on "Protect thin lines"'}`:''}.`);
+      html+=row(st.noWhitePx/Math.max(1,st.inkPx)<0.05?'ok':'warn',`Ink with no white (the choked outer edge): ${(100*st.noWhitePx/Math.max(1,st.inkPx)).toFixed(1)}%.`);
+    }
+    $('checkOut').innerHTML=html;
+    $('info').textContent='Print check done — see the results under the buttons.';
+  }catch(err){ $('info').textContent='Print check failed: '+err.message; }
+  finally{ setProgress(null); setBusy(false); }
+}
+async function exportWedge(){
+  if(busy) return; const P={...S}; setBusy(true);
+  try{
+    const lpis=[25,30,35,45,55], covs=[5,10,15,20,25,30,40,50,60,70,80,90,100];
+    const patch=150, gap=24, left=170, top=110, Wd=left+covs.length*(patch+gap), Hd=top+lpis.length*(patch+gap)+50;
+    const c=document.createElement('canvas'); c.width=Wd; c.height=Hd; const x=c.getContext('2d');
+    const id=x.createImageData(Wd,Hd), o=id.data;
+    const inkC=lum(...hexRGB(P.garment))<0.5?[255,255,255]:[0,0,0];
+    for(let r=0;r<lpis.length;r++){
+      const scr=makeScreen({...P,lpi:lpis[r]},300);
+      for(let k=0;k<covs.length;k++){
+        const t=covs[k]/100, x0=left+k*(patch+gap), y0=top+r*(patch+gap);
+        for(let yy=0;yy<patch;yy++) for(let xx=0;xx<patch;xx++){ const X=x0+xx, Y=y0+yy;
+          if(t>=1||scr(X,Y,t)){ const j=(Y*Wd+X)*4; o[j]=inkC[0]; o[j+1]=inkC[1]; o[j+2]=inkC[2]; o[j+3]=255; } }
+      }
+      await tick();
+    }
+    x.putImageData(id,0,0);
+    x.fillStyle='#808080'; x.textBaseline='middle';
+    x.font='bold 30px system-ui'; x.textAlign='left';
+    x.fillText(`DTF test wedge — ${P.shape} dots, ${P.angle}°, smallest dot ${P.minDotMM} mm (${P.minMode}), 300 DPI`,20,40);
+    x.font='26px system-ui'; x.textAlign='center';
+    covs.forEach((cv,k)=>x.fillText(cv+'%',left+k*(patch+gap)+patch/2,top-22));
+    x.textAlign='left'; lpis.forEach((l,r)=>x.fillText(l+' LPI',20,top+r*(patch+gap)+patch/2));
+    x.font='22px system-ui'; x.fillText('Print at 100% on your usual film and shirt. For each LPI, find the lowest % where every dot survives and holds white.',20,Hd-30);
+    // keep the sheet DTF-clean: no semi-transparent pixels from the text
+    const fin=x.getImageData(0,0,Wd,Hd), f=fin.data; for(let i=3;i<f.length;i+=4) f[i]=f[i]>=128?255:0; x.putImageData(fin,0,0);
+    const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    download(await tagPNG(blob,300),'dtf-test-wedge-300dpi.png');
+    $('info').textContent=`Exported dtf-test-wedge-300dpi.png — ${Wd}×${Hd} px (${fmtIn(Wd/300)} × ${fmtIn(Hd/300)} in).`;
+  }catch(err){ $('info').textContent='Wedge export failed: '+err.message; }
+  finally{ setBusy(false); }
+}
+$('exportHalftone').addEventListener('click',()=>exportPNG('halftone'));
+$('exportUnderbase').addEventListener('click',()=>exportPNG('underbase'));
+$('checkBtn').addEventListener('click',runCheck);
+$('wedgeBtn').addEventListener('click',exportWedge);
+
+updateHints();
+pctx.fillStyle='#222'; pctx.fillRect(0,0,800,800);
+pctx.fillStyle='#777'; pctx.font='20px system-ui'; pctx.textAlign='center';
+pctx.fillText('Your halftone preview appears here',400,400);
+</script>
+</body>
+</html>

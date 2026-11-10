@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DTF/DTG Prep Studio</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="logo">
+        <span class="logo-mark">DTF</span> TONES <span class="logo-sub">Studio</span>
+      </div>
+      <div class="header-actions">
+        <button id="btnExport" disabled>Export 300 DPI PNG</button>
+      </div>
+    </header>
+
+    <main class="studio-layout">
+      <aside class="sidebar">
+        
+        <!-- PREFLIGHT (Hidden until apply) -->
+        <div class="preflight-box" id="preflightBox" style="display: none;">
+          <div class="preflight-score" id="preflightScore">100</div>
+          <div class="preflight-text">
+            <div class="preflight-verdict" id="preflightVerdict">Clean edges, no haze</div>
+            <div class="preflight-detail" id="preflightDetail">Every inked pixel is fully solid.</div>
+          </div>
+        </div>
+
+        <form id="controls" class="controls-scroll" autocomplete="off">
+          
+          <!-- 1. BACKGROUND REMOVAL -->
+          <details open>
+            <summary>Background Removal</summary>
+            <div class="panel-content">
+              <div class="help-text" style="margin-bottom: 1rem;">
+                For solid black or white backgrounds, use the Knockout controls below — they're more precise.
+                For complex photo backgrounds, use an online background remover, download the transparent PNG, and drop it here.
+              </div>
+              <button type="button" id="btnBgRemover" class="btn-secondary" style="width: 100%; margin-top: 0.5rem;">
+                Open background remover ↗
+              </button>
+              <div class="help-text" style="margin-top: 0.5rem;">
+                Opens in a separate window. Note: the website uploads your image to its own servers.
+              </div>
+            </div>
+          </details>
+
+          <!-- 2. IMAGE SIZE -->
+          <details>
+            <summary>Image Size</summary>
+            <div class="panel-content">
+              <div class="control-row">
+                <label>Pixel Dimensions</label>
+                <div class="help-text" id="pixelDimensions">4000 × 5000 px</div>
+              </div>
+              <div class="control-row split-row">
+                <div>
+                  <label>Width</label>
+                  <input type="number" id="printWidth" min="0.1" step="0.01" />
+                </div>
+                <div>
+                  <label>Height</label>
+                  <input type="number" id="printHeight" min="0.1" step="0.01" />
+                </div>
+              </div>
+              <div class="button-row">
+                <button type="button" class="btn-small active" data-unit="in">Inches</button>
+                <button type="button" class="btn-small" data-unit="cm">cm</button>
+                <button type="button" class="btn-small" data-unit="mm">mm</button>
+              </div>
+              <div class="control-row" style="margin-top: 1rem;">
+                <label>Film width (in)</label>
+                <input type="number" id="filmWidth" value="22" min="1" step="0.5" />
+              </div>
+              <div class="control-row">
+                <label>Print resolution</label>
+                <div class="help-text" id="sizeFindings">Load an image to check its resolution at this size.</div>
+              </div>
+            </div>
+          </details>
+
+          <!-- 3. SHIRT COLOR & KNOCKOUT -->
+          <details open>
+            <summary>Shirt Color</summary>
+            <div class="panel-content">
+              <div class="control-row">
+                <label>Knockout Color</label>
+                <div class="input-group split">
+                  <input type="color" id="shirtColor" value="#000000" />
+                  <input type="text" id="shirtHex" value="#000000" class="hex-input" />
+                </div>
+              </div>
+              <div class="control-row">
+                <label>Knockout tolerance</label>
+                <div class="input-group">
+                  <input type="range" id="knockoutTolerance" min="0" max="120" step="1" value="30" />
+                  <input type="number" id="knockoutToleranceNum" min="0" max="120" step="1" value="30" />
+                </div>
+                <div class="help-text">How close a colour has to be to the knockout colour to be removed</div>
+              </div>
+              <div class="control-row">
+                <label>Edge softness</label>
+                <div class="input-group">
+                  <input type="range" id="edgeSoftness" min="0" max="60" step="1" value="10" />
+                  <input type="number" id="edgeSoftnessNum" min="0" max="60" step="1" value="10" />
+                </div>
+                <div class="help-text">0 = hard cut. Higher fades the edge, which can print as a faint halo on DTF</div>
+              </div>
+            </div>
+          </details>
+
+          <!-- HIDDEN ADVANCED SETTINGS -->
+          <div id="advancedSettings" style="display: none;">
+            
+            <!-- 4. HALFTONE SCREEN -->
+            <details open>
+              <summary>
+                Halftone Screen
+                <button type="button" id="btnAutoTone" class="btn-small" style="margin-left: auto; font-size: 0.65rem; position: relative; z-index: 20;">Auto-Tone</button>
+              </summary>
+              <div class="panel-content">
+                <div class="checkbox-row">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableHalftone" checked />
+                    <span class="slider"></span>
+                  </label>
+                  <span>Enable Halftone</span>
+                </div>
+                <div class="control-row">
+                  <label>Dot Size</label>
+                  <select id="patternScaleSelect">
+                    <option value="15">15 lpi (Bold)</option>
+                    <option value="30" selected>30 lpi (Standard)</option>
+                    <option value="45">45 lpi (Fine)</option>
+                    <option value="65">65 lpi (Ultra fine)</option>
+                  </select>
+                </div>
+                <div class="control-row">
+                  <label>Angle</label>
+                  <input type="number" id="patternAngleInput" value="22.5" step="0.5" />
+                </div>
+                <div class="control-row">
+                  <label>Halftone Shape</label>
+                  <select id="halftoneShape">
+                    <option value="0">Round</option>
+                    <option value="1">Ellipse</option>
+                    <option value="2">Diamond</option>
+                    <option value="3">Square</option>
+                    <option value="4">Line</option>
+                  </select>
+                </div>
+              </div>
+            </details>
+
+            <!-- 5. LEVELS -->
+            <details>
+              <summary><span>☀️ Levels</span></summary>
+              <div class="panel-content">
+                <div class="levels-section">
+                  <div class="levels-label">Input Levels</div>
+                  <div class="histogram-box">
+                    <canvas id="histogramCanvas" width="300" height="60"></canvas>
+                    <div class="slider-track">
+                      <div class="slider-gradient"></div>
+                      <input type="range" id="levelsWhiteSlider" min="1" max="255" value="255" step="1" class="level-slider white" />
+                      <input type="range" id="levelsMidSlider" min="0.10" max="9.99" step="0.01" value="1.01" class="level-slider mid" />
+                      <input type="range" id="levelsBlackSlider" min="0" max="254" value="0" step="1" class="level-slider black" />
+                    </div>
+                  </div>
+                  <div class="levels-inputs-row">
+                    <input type="number" id="levelsBlack" value="0" min="0" max="254" />
+                    <input type="number" id="levelsMid" value="1.01" step="0.01" min="0.10" max="9.99" />
+                    <input type="number" id="levelsWhite" value="255" min="1" max="255" />
+                  </div>
+                  
+                  <div class="levels-label" style="margin-top: 1.5rem;">Output Levels</div>
+                  <div class="slider-track">
+                    <div class="slider-gradient"></div>
+                    <input type="range" id="levelsOutWhiteSlider" min="1" max="255" value="255" step="1" class="level-slider white" />
+                    <input type="range" id="levelsOutBlackSlider" min="0" max="254" value="0" step="1" class="level-slider black" />
+                  </div>
+                  <div class="levels-inputs-row">
+                    <input type="number" id="levelsOutBlack" value="0" min="0" max="254" />
+                    <input type="number" id="levelsOutWhite" value="255" min="1" max="255" />
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- 6. CLEANUP -->
+            <details>
+              <summary><span>🎯 Cleanup</span></summary>
+              <div class="panel-content">
+                <div class="control-row">
+                  <label>Cleanup Intensity</label>
+                  <div class="input-group">
+                    <input type="range" id="cleanupIntensity" min="0" max="100" step="1" value="39" />
+                    <input type="number" id="cleanupIntensityNum" min="0" max="100" step="1" value="39" />
+                    <span style="color: var(--muted); font-size: 0.75rem;">%</span>
+                  </div>
+                </div>
+                <div class="control-row">
+                  <label>Micro-Dot Cleanup</label>
+                  <div class="input-group">
+                    <input type="range" id="microDot" min="0" max="10" step="1" value="10" />
+                    <input type="number" id="microDotNum" min="0" max="10" step="1" value="10" />
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- 7. UNDERBASE -->
+            <details>
+              <summary><span>🥞 Underbase</span></summary>
+              <div class="panel-content">
+                <div class="checkbox-row">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="enableUnderbase" />
+                    <span class="slider"></span>
+                  </label>
+                  <span>Underbase</span>
+                </div>
+                <div class="help-text">When on, Export also saves a separate white-underbase PNG. The choke shrinks only the underbase, not the color.</div>
+                <div class="control-row">
+                  <label>Choke</label>
+                  <div class="input-group">
+                    <input type="range" id="chokePx" min="0" max="5" step="1" value="1" />
+                    <input type="number" id="chokePxNum" min="0" max="5" step="1" value="1" />
+                    <span style="font-size: 0.75rem; color: var(--muted);">px</span>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <button type="button" id="btnApply" class="btn-primary" style="display: none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Generate DTF Output
+            </button>
+
+          </div>
+
+          <!-- INITIAL APPLY BUTTON -->
+          <button type="button" id="btnInitialApply" class="btn-primary">Generate DTF Output</button>
+
+        </form>
+      </aside>
+
+      <!-- Main Workspace -->
+      <section class="workspace" id="dropZone">
+        <div class="canvas-toolbar">
+          <div class="view-modes">
+            <label><input type="radio" name="view" value="composite" checked /> Original</label>
+            <label><input type="radio" name="view" value="color" /> Separation</label>
+            <label><input type="radio" name="view" value="white" /> Underbase</label>
+          </div>
+          <div class="zoom-controls">
+            <button class="btn-icon" onclick="setZoom(50)">50%</button>
+            <button class="btn-icon" onclick="setZoom(100)">100%</button>
+            <button class="btn-icon" onclick="setZoom(200)">200%</button>
+          </div>
+        </div>
+
+        <div class="canvas-area">
+          <div class="canvas-container" id="canvasContainer">
+            <canvas id="canvas" style="--zoom: 1;"></canvas>
+            
+            <div id="empty-state">
+              <div class="empty-icon">⬚</div>
+              <p>Drag & Drop your image here</p>
+              <span>or</span>
+              <label class="file-input-btn">
+                <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" />
+                Choose Image
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
